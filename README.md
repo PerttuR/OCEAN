@@ -2,6 +2,6 @@
 Tässä versionhallinnassa sijaitsee Luken Merituulivoima ja troolikalastus projektin datan käsittelyscriptit.
 Projekti alkanut Helmikuussa 2026. Projektin kesto: vuoden 2026 loppuun.
 
-Kuvaus
+Kuvaus:
 
-Kuvaus mitä scriptit tekevät...
+Kuvaus tähän mitä scriptit suurinpiirtein tekevät...
