@@ -265,7 +265,7 @@ write.table(table2Save, paste0(outPath, "table2Save.csv"), na = "",row.names=FAL
 
 table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
-  FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+  #FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
   #SUM_LE_KG_HER = sum(LE_KG_HER),
   #SUM_LE_KG_SPR = sum(LE_KG_SPR),
   #SUM_LE_KG_FVE = sum(LE_KG_FVE),
@@ -275,7 +275,7 @@ summarise(
 
 table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
   summarise(
-    FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
+    #FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
     #SUM_LE_KG_HER = sum(LE_KG_HER),
     #SUM_LE_KG_SPR = sum(LE_KG_SPR),
     #SUM_LE_KG_FVE = sum(LE_KG_FVE),
