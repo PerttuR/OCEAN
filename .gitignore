@@ -34,3 +34,7 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 .DS_Store
+# Data files
+*.RData
+*.csv
+
