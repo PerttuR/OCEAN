@@ -66,6 +66,7 @@ for(year in yearsToSubmit){
   
   cols_kg <- colnames(eflalo)[idx_kg]
   cols_euro <- colnames(eflalo)[idx_euro]
+  cols_euro <- cols_euro[!cols_euro %in% "LE_EURO_ELE"]
   
   # Define the columns to be included in the table
   cols <- c(
