@@ -37,4 +37,5 @@ rsconnect/
 # Data files
 *.RData
 *.csv
+*.rds
 
