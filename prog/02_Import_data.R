@@ -1,1 +1,1 @@
-#
+# Tarvitaanko jotain C-ruutu vektoreita yms GIS materiaalia?
