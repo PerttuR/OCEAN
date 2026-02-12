@@ -38,4 +38,8 @@ rsconnect/
 *.RData
 *.csv
 *.rds
+*.pdf
+*.xlsx
+*.gpkg
+*.zip
 
