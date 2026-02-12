@@ -1,5 +1,5 @@
 # LIBRARYS ####
-
+library(readxl)
 library(raster)
 library(stringr)
 library(dplyr)
@@ -41,6 +41,12 @@ library(lubridate)
 library(here)
 library(operators) #breaks pipes, is this needed?
 library(magrittr) #unbreak pipes :)
+library(rnaturalearth)
+# library(rnaturalearthhires)
+library(rnaturalearthdata)
+library(purrr)
+library(maps)
+library(csquares)
 
 source("prog/run.R")
 
@@ -56,5 +62,9 @@ dataPath  <- paste0(path, "orig/")      # Location to store tacsat (VMS) and efl
 runScript(paste0(codePath, "02_import_data.R"))
 
 runScript(paste0(codePath, "03_prepare_data.R"))
+
+# MAKE MAPS ####
+
+runScript(paste0(codePath, "04_make_maps.R"))
 
 
