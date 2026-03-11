@@ -266,12 +266,16 @@ write.table(table2Save, paste0(outPath, "table2Save.csv"), na = "",row.names=FAL
 table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
   #FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
-  #SUM_LE_KG_HER = sum(LE_KG_HER),
-  #SUM_LE_KG_SPR = sum(LE_KG_SPR),
-  #SUM_LE_KG_FVE = sum(LE_KG_FVE),
+  SUM_KG_HER = sum(LE_KG_HER),
+  SUM_EURO_HER = sum(LE_EURO_HER),
+  SUM_KG_SPR = sum(LE_KG_SPR),
+  SUM_EURO_SPR = sum(LE_EURO_SPR),
+  SUM_KG_FVE = sum(LE_KG_FVE),
+  SUM_EURO_FVE = sum(LE_EURO_FVE),
   SPATIAL = "C-SQUARE",
   No_Records = n()
 )
+
 
 table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
   summarise(
@@ -290,6 +294,8 @@ table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, 
 # Headers and quotes have been removed to be compatible with required submission and ICES SQL DB format.
 write.table(table1_statistics, paste0(outPath, "table1_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 write.table(table2_statistics, paste0(outPath, "table2_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
+
+
 #'------------------------------------------------------------------------------
 # End of script                                                             
 #'------------------------------------------------------------------------------
