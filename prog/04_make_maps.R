@@ -47,6 +47,13 @@ baltic.highres <- ne_countries(country=p, scale="large", returnclass = "sf")
 
 
 ##############
+#WINDMILL SHAPES
+
+EBBA <- read_sf("maps/Merituulivoima-alueita/EBBA_hankealue/EBBA_hankealue.shp")
+EDITH <- read_sf("maps/Merituulivoima-alueita/Edith_hankealue/Hankerajaus_Närpiö_1_km_etelään.shp")
+
+
+##############
 
 # LOGBOOK data - flatten to data.frame
 table2 <- as.data.frame(readRDS("out/table2save.rds"))
@@ -158,14 +165,14 @@ pdf("fishing_hours_from_VMS_2016_2025.pdf", width = 8, height = 6)
 invisible(purrr::iwalk(plots, ~ print(.x)))
 dev.off()
 
-# create plot for each year using purrr VALUE SD3031
+
 plots <- sf_list %>%
   imap(~ ggplot(.x) +
          geom_sf(aes(fill = TotValue)) +
          geom_sf(data=baltic, fill = "lightgrey", color = "black", linewidth = 0.3, alpha=0.5) +
          geom_text(data = label_fix, aes(x = lon, y = lat, label = sovereignt), size=2) +
          coord_sf(xlim=c(17, 25.5), ylim=c(60,66), expand=FALSE) +
-         scale_fill_viridis_c(na.value = "transparent", direction=-1) +
+         scale_fill_viridis_c(na.value = "transparent", direction=-1, labels = function(x) format(round(x), big.mark = "", scientific = FALSE)) +
          theme_minimal() +
          labs(
            title = paste("Value of catch from VMS vessels in", .y),
@@ -180,5 +187,80 @@ plots[[1]]
 # plot several years to PDF
 
 pdf("Value_of_catch_from_VMS_2016_2025.pdf", width = 8, height = 6)
+invisible(purrr::iwalk(plots, ~ print(.x)))
+dev.off()
+
+
+
+# create plot for each year using purrr VALUE SD3031 with WINDMILLS
+
+plots <- sf_list %>%
+  imap(~ ggplot(.x) +
+         
+         # 1. Ruudukko alin kerros
+         geom_sf(aes(fill = TotValue), alpha = 0.7) +
+         
+         # 2. Tuulivoima-alueet EBBA & EDITH
+         geom_sf(data = EBBA,
+                 fill = "#d96b6b",
+                 color = "black",
+                 linewidth = 0.3,
+                 alpha = 0.4) +
+         
+         geom_sf(data = EDITH,
+                 fill = "#d96b6b",
+                 color = "black",
+                 linewidth = 0.3,
+                 alpha = 0.4) +
+         
+         # 3. Mantereet (harmaa täyttö)
+         geom_sf(data = baltic,
+                 fill = "grey80",      # tasainen harmaa
+                 color = "black",
+                 linewidth = 0.4,
+                 alpha = 1) +
+         
+         # 4. Maan nimilaput
+         geom_text(
+           data = label_fix,
+           aes(x = lon, y = lat, label = sovereignt),
+           size = 2
+         ) +
+         
+         coord_sf(xlim = c(17, 25.5), ylim = c(60, 66), expand = FALSE) +
+         
+         scale_fill_viridis_c(
+           na.value = "transparent",
+           direction = -1,
+           labels = function(x) format(round(x), big.mark = "", scientific = FALSE)
+         ) +
+         
+         theme_minimal() +
+         labs(
+           title = paste("Value of catch from VMS vessels in", .y),
+           fill = "Value of catch"
+         ) +
+         theme(
+           plot.margin = margin(0, 0, 0, 0, "cm"),
+           
+           # Taustavesi → valkoinen
+           panel.background = element_rect(fill = "white", color = NA),
+           plot.background = element_rect(fill = "white", color = NA)
+         )
+  )
+
+# plot the first year
+plots[[1]]
+
+# pieni marginaali:
+
+plots <- lapply(plots, function(p) {
+  p + theme(plot.margin = margin(5, 5, 5, 5))  # esim. 5 pt marginaali
+})
+
+
+# plot several years to PDF
+
+pdf("WINDMILL_and_Value_from_VMS_2016_2025.pdf", width = 8, height = 6)
 invisible(purrr::iwalk(plots, ~ print(.x)))
 dev.off()
