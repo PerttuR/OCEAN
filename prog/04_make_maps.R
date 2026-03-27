@@ -51,7 +51,19 @@ baltic.highres <- ne_countries(country=p, scale="large", returnclass = "sf")
 
 EBBA <- read_sf("maps/Merituulivoima-alueita/EBBA_hankealue/EBBA_hankealue.shp")
 EDITH <- read_sf("maps/Merituulivoima-alueita/Edith_hankealue/Hankerajaus_Närpiö_1_km_etelään.shp")
-
+KORS <- read_sf("maps/Merituulivoima-alueita/Korsnäs/FIKOR01WF_BDSB_SiBdry_v05_230719dehm25834_ExtObjID4.shp")
+KRIST <- read_sf("maps/Merituulivoima-alueita/Kristiinankaupunki/Hankerajaus_Kristiinankaupunki.shp")
+MAA <- read_sf("maps/Merituulivoima-alueita/Maanahkiainen/Maanahkiainen,_varausalue.shp")
+ALUEV <- read_sf("maps/Merituulivoima-alueita/Merituulivoima_alueet_luke/Aluevesien_hankkeet.shp")
+RUOTSI <- read_sf("maps/Merituulivoima-alueita/Merituulivoima_alueet_luke/Ruotsin_alueet.shp")
+BB_NORTH <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Bay North.shp")
+BB_SOUTH <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Bay South.shp")
+BB_EAST <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Sea East.shp")
+BB_WEST <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Sea West.shp")
+POOKI <- read_sf("maps/Merituulivoima-alueita/Pooki/Pooki,_varausalue.shp")
+SELJA_E <- read_sf("maps/Merituulivoima-alueita/Seljänsuunmatala Itäinen/Seljänsuunmatala_itä.shp")
+SELJA_W <- read_sf("maps/Merituulivoima-alueita/Seljänsuunmatala Läntinen/Seljänsuunmatala_länsi.shp")
+TAHKO <- read_sf("maps/Merituulivoima-alueita/Tahkoluoto/tahkoluoto,_laajennus_ja_tuotannossa_oleva_käyttöoikeusalue.shp")
 
 ##############
 
@@ -133,12 +145,13 @@ result_list <- table1_list |>
                          TotValue =sum(TotValue , na.rm = TRUE),
                          TotWeight = sum(TotWeight))) 
 
-# csquares
+# csquares reso 0,1 degrees
 sf_list <- result_list |>
   purrr::map(~ .x |>
                as_csquares(csquares = "csquare.01", resolution = 0.1) %>%
                st_as_sf()
   )
+
 
 # create plot for each year using purrr
 plots <- sf_list %>%
@@ -194,24 +207,27 @@ dev.off()
 
 # create plot for each year using purrr VALUE SD3031 with WINDMILLS
 
+wind_areas <- list(EBBA, EDITH, KORS, KRIST, MAA, ALUEV, RUOTSI, BB_NORTH,BB_SOUTH, BB_EAST, BB_WEST, POOKI, SELJA_E, SELJA_W, TAHKO)
+
+wind_layer <- purrr::map(
+  wind_areas,
+  ~ geom_sf(
+    data = .x,
+    fill = "#d96b6b",
+    color = "black",
+    linewidth = 0.3,
+    alpha = 0.4
+  )
+)
+
 plots <- sf_list %>%
   imap(~ ggplot(.x) +
          
          # 1. Ruudukko alin kerros
          geom_sf(aes(fill = TotValue), alpha = 0.7) +
          
-         # 2. Tuulivoima-alueet EBBA & EDITH
-         geom_sf(data = EBBA,
-                 fill = "#d96b6b",
-                 color = "black",
-                 linewidth = 0.3,
-                 alpha = 0.4) +
-         
-         geom_sf(data = EDITH,
-                 fill = "#d96b6b",
-                 color = "black",
-                 linewidth = 0.3,
-                 alpha = 0.4) +
+         # 2. Tuulivoima-alueet EBBA & EDITH etc...
+         wind_layer +
          
          # 3. Mantereet (harmaa täyttö)
          geom_sf(data = baltic,
@@ -237,7 +253,7 @@ plots <- sf_list %>%
          
          theme_minimal() +
          labs(
-           title = paste("Value of catch from VMS vessels in", .y),
+           title = paste("Value from VMS RESO 0,1 astetta in", .y),
            fill = "Value of catch"
          ) +
          theme(
@@ -261,6 +277,76 @@ plots <- lapply(plots, function(p) {
 
 # plot several years to PDF
 
-pdf("WINDMILL_and_Value_from_VMS_2016_2025.pdf", width = 8, height = 6)
+pdf("WINDMILL_and_Value_from_VMS_2016_2025_VMS_RESOLUUTIO_KESKITARKKA.pdf", width = 8, height = 6)
+invisible(purrr::iwalk(plots, ~ print(.x)))
+dev.off()
+
+#PIIRRETÄÄN 0.05 astetta
+
+# csquares reso 0,05 degrees
+sf_list2 <- table1_list |>
+  purrr::map(~ .x |>
+               as_csquares(csquares = "Csquare", resolution = 0.05) %>%
+               st_as_sf()
+  )
+
+plots <- sf_list2 %>%
+  imap(~ ggplot(.x) +
+         
+         # 1. Ruudukko alin kerros
+         geom_sf(aes(fill = TotValue), alpha = 0.7) +
+         
+         # 2. Tuulivoima-alueet EBBA & EDITH etc...
+         wind_layer +
+         
+         # 3. Mantereet (harmaa täyttö)
+         geom_sf(data = baltic,
+                 fill = "grey80",      # tasainen harmaa
+                 color = "black",
+                 linewidth = 0.4,
+                 alpha = 1) +
+         
+         # 4. Maan nimilaput
+         geom_text(
+           data = label_fix,
+           aes(x = lon, y = lat, label = sovereignt),
+           size = 2
+         ) +
+         
+         coord_sf(xlim = c(17, 25.5), ylim = c(60, 66), expand = FALSE) +
+         
+         scale_fill_viridis_c(
+           na.value = "transparent",
+           direction = -1,
+           labels = function(x) format(round(x), big.mark = "", scientific = FALSE)
+         ) +
+         
+         theme_minimal() +
+         labs(
+           title = paste("Value from VMS RESO 0,05 astetta in", .y),
+           fill = "Value of catch"
+         ) +
+         theme(
+           plot.margin = margin(0, 0, 0, 0, "cm"),
+           
+           # Taustavesi → valkoinen
+           panel.background = element_rect(fill = "white", color = NA),
+           plot.background = element_rect(fill = "white", color = NA)
+         )
+  )
+
+# plot the first year
+plots[[1]]
+
+# pieni marginaali:
+
+plots <- lapply(plots, function(p) {
+  p + theme(plot.margin = margin(5, 5, 5, 5))  # esim. 5 pt marginaali
+})
+
+
+# plot several years to PDF
+
+pdf("WINDMILL_and_Value_from_VMS_2016_2025_VMS_RESOLUUTIO_TARKKA.pdf", width = 8, height = 6)
 invisible(purrr::iwalk(plots, ~ print(.x)))
 dev.off()
