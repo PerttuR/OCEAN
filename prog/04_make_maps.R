@@ -122,7 +122,9 @@ table1_list <- table1_list %>%
 result_list <- table1_list |>
   purrr::map(~ .x |>
                group_by(csquare.01) |>
-               summarise(FishingHours = sum(FishingHour, na.rm = TRUE)))
+               summarise(FishingHours = sum(FishingHour, na.rm = TRUE),
+                         TotValue =sum(TotValue , na.rm = TRUE),
+                         TotWeight = sum(TotWeight))) 
 
 # csquares
 sf_list <- result_list |>
@@ -153,5 +155,30 @@ plots[[1]]
 # plot several years to PDF
 
 pdf("fishing_hours_from_VMS_2016_2025.pdf", width = 8, height = 6)
+invisible(purrr::iwalk(plots, ~ print(.x)))
+dev.off()
+
+# create plot for each year using purrr VALUE SD3031
+plots <- sf_list %>%
+  imap(~ ggplot(.x) +
+         geom_sf(aes(fill = TotValue)) +
+         geom_sf(data=baltic, fill = "lightgrey", color = "black", linewidth = 0.3, alpha=0.5) +
+         geom_text(data = label_fix, aes(x = lon, y = lat, label = sovereignt), size=2) +
+         coord_sf(xlim=c(17, 25.5), ylim=c(60,66), expand=FALSE) +
+         scale_fill_viridis_c(na.value = "transparent", direction=-1) +
+         theme_minimal() +
+         labs(
+           title = paste("Value of catch from VMS vessels in", .y),
+           fill = "Value of catch") +
+         theme(plot.margin = margin(0, 0, 0, 0, "cm"),
+               panel.background = element_rect(fill = "lightblue"))
+  )
+
+# plot the first year
+plots[[1]]
+
+# plot several years to PDF
+
+pdf("Value_of_catch_from_VMS_2016_2025.pdf", width = 8, height = 6)
 invisible(purrr::iwalk(plots, ~ print(.x)))
 dev.off()
