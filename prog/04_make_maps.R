@@ -133,8 +133,9 @@ names(table1_list) <- table1 |> distinct(Year) |> arrange(Year) |> pull(Year)
 table1_list <- table1_list %>%
   purrr::map(~ .x %>%
                mutate(
-                 csquare.01 = str_remove(csquares.orig, ":[^:]*$")   # remove final :segment
-               )
+                 csquare.01 = str_remove(csquares.orig, ":[^:]*$"),   # remove final :segment
+                 csquare.5 = str_remove(csquares.orig, ":[^:]*:[^:]*$")
+                 )
   )
 
 # now aggregate Fishing Days by ICES across each year using purrr
@@ -152,6 +153,18 @@ sf_list <- result_list |>
                st_as_sf()
   )
 
+result_list2 <- table1_list |>
+  purrr::map(~ .x |>
+               group_by(csquare.5) |>
+               summarise(FishingHours = sum(FishingHour, na.rm = TRUE),
+                         TotValue =sum(TotValue , na.rm = TRUE),
+                         TotWeight = sum(TotWeight))) 
+# csquares reso 0,5 degrees
+sf_list3 <- result_list2 |>
+  purrr::map(~ .x |>
+               as_csquares(csquares = "csquare.5", resolution = 0.5) %>%
+               st_as_sf()
+  )
 
 # create plot for each year using purrr
 plots <- sf_list %>%
@@ -348,5 +361,69 @@ plots <- lapply(plots, function(p) {
 # plot several years to PDF
 
 pdf("WINDMILL_and_Value_from_VMS_2016_2025_VMS_RESOLUUTIO_TARKKA.pdf", width = 8, height = 6)
+invisible(purrr::iwalk(plots, ~ print(.x)))
+dev.off()
+
+
+#### PLOT One degree reso map
+
+plots <- sf_list3 %>%
+  imap(~ ggplot(.x) +
+         
+         # 1. Ruudukko alin kerros
+         geom_sf(aes(fill = TotValue), alpha = 0.7) +
+         
+         # 2. Tuulivoima-alueet EBBA & EDITH etc...
+         wind_layer +
+         
+         # 3. Mantereet (harmaa täyttö)
+         geom_sf(data = baltic,
+                 fill = "grey80",      # tasainen harmaa
+                 color = "black",
+                 linewidth = 0.4,
+                 alpha = 1) +
+         
+         # 4. Maan nimilaput
+         geom_text(
+           data = label_fix,
+           aes(x = lon, y = lat, label = sovereignt),
+           size = 2
+         ) +
+         
+         coord_sf(xlim = c(17, 25.5), ylim = c(60, 66), expand = FALSE) +
+         
+         scale_fill_viridis_c(
+           na.value = "transparent",
+           direction = -1,
+           labels = function(x) format(round(x), big.mark = "", scientific = FALSE)
+         ) +
+         
+         theme_minimal() +
+         labs(
+           title = paste("Value from VMS RESO 1X1 astetta in", .y),
+           fill = "Value of catch"
+         ) +
+         theme(
+           plot.margin = margin(0, 0, 0, 0, "cm"),
+           
+           # Taustavesi → valkoinen
+           panel.background = element_rect(fill = "white", color = NA),
+           plot.background = element_rect(fill = "white", color = NA)
+         )
+  )
+
+# plot the first year
+plots[[1]]
+
+# pieni marginaali:
+
+plots <- lapply(plots, function(p) {
+  p + theme(plot.margin = margin(5, 5, 5, 5))  # esim. 5 pt marginaali
+})
+
+
+# plot several years to PDF
+
+pdf("WINDMILL_and_Value_from_VMS_2016_2025_VMS_RESOLUUTIO_KARKEA.pdf", width = 8, height = 6)
 invisible(purrr::iwalk(plots, ~ print(.x)))
 dev.off()
