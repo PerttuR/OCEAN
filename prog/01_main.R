@@ -33,7 +33,7 @@ library(icesConnect)
 #install.packages("sqldf")
 #install.packages("icesVMS", repos = 'https://ices-tools-prod.r-universe.dev')
 library(icesVMS)
-#install.packages("icesSharePoint") This is downloaded from: https://ices-tools-prod.r-universe.dev/icesSharePoint
+#install.packages('icesSharePoint', repos = c('https://ices-tools-prod.r-universe.dev', 'https://cloud.r-project.org'))
 library(icesSharePoint)
 library(units)
 #library(tcltk) # R says: Is BASE package already

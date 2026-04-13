@@ -245,10 +245,9 @@ table2Save <- table2 %>%
 #ignore the warnings - just the spare mesh sizes
 
 # Save 
+dir.create(outPath, recursive = TRUE, showWarnings = FALSE) #create the folder first
 saveRDS(table1Save, paste0(outPath, "table1Save.rds"))
 saveRDS(table2Save, paste0(outPath, "table2Save.rds"))
-
-
 
 #'------------------------------------------------------------------------------
 #  Save the final TABLE 1 and TABLE 2 to csv           ----
@@ -260,12 +259,115 @@ write.table(table2Save, paste0(outPath, "table2Save.csv"), na = "",row.names=FAL
 
 
 #'------------------------------------------------------------------------------
+#  PREPARE DATA FOR ICES AREAS AND SQUARES          ----
+#'------------------------------------------------------------------------------
+
+
+#import ICES squares
+ices_rect <- read_sf("orig/ices_data/ICES_rectangles/ICES_Statistical_Rectangles_Eco.shp") |>
+  filter(Ecoregion == "Baltic Sea")
+ices_list <- ices_rect$ICESNAME
+
+#Convert to polygons
+# unique C-squares from table1
+csq <- unique(table1$Csquare)
+
+# convert to lon/lat centroids
+csq_ll <- CSquare2LonLat(csq, degrees = 0.5)
+csq_ll$Csquare <- csq
+
+csq_sf <- st_as_sf(
+  csq_ll,
+  coords = c("SI_LONG", "SI_LATI"),
+  crs = 4326,
+  remove = FALSE
+)
+#Assign c-squares to ICES rectangles
+csq_ices <- st_join(
+  csq_sf,
+  ices_rect["ICESNAME"],
+  join = st_intersects,
+  left = TRUE
+) |>
+  group_by(Csquare) |>
+  slice(1) |>   # deterministic first match
+  ungroup()
+
+# lookup table: C-square → ICES rectangle
+csq_lut <- csq_ices |>
+  st_drop_geometry() |>
+  select(Csquare, ICESrectangle = ICESNAME)
+#and join
+table1 <- table1 |>
+  left_join(csq_lut, by = "Csquare")
+
+#### And ices areas ####
+ices_area <- read_sf("orig/ices_data/ICES_areas/ICES_Areas_20160601_cut_dense_3857.shp")
+csq_sf_3857 <- st_transform(csq_sf, st_crs(ices_area))
+csq_area <- st_join(
+  csq_sf_3857,
+  ices_area["SubDivisio"],
+  join = st_intersects
+)
+
+csq_area_lut <- csq_area %>%
+  group_by(Csquare) %>%
+  slice(1) %>%
+  ungroup() %>%
+  st_drop_geometry() %>%
+  select(Csquare, ICESarea = SubDivisio)
+
+table1 <- table1 %>%
+  left_join(csq_area_lut, by = "Csquare")
+
+stopifnot("ICESarea" %in% names(table1))
+
+###Checks
+# rectangles
+missing_rect <- table1 %>% filter(is.na(ICESrectangle))
+nrow(missing_rect)
+
+# areas
+missing_area <- table1 %>% filter(is.na(ICESarea))
+nrow(missing_area)
+
+unique(missing_rect$Csquare)
+unique(missing_area$Csquare)
+
+table1 <- table1 %>%
+  mutate(
+    ICESrectangle = if_else(
+      is.na(ICESrectangle), "UNKNOWN", ICESrectangle
+    ),
+    ICESarea = if_else(
+      is.na(ICESarea), "UNKNOWN", ICESarea
+    )
+  )
+
+#### finding missing values for ICES rectangles (for some reason they were not all matched)
+rect_area_lut <- table1 %>%
+  filter(!is.na(ICESarea)) %>%
+  distinct(ICESrectangle, ICESarea)
+
+ambiguous_rects <- rect_area_lut %>%
+  count(ICESrectangle) %>%
+  filter(n > 1)
+
+nrow(ambiguous_rects)
+
+
+
+#'------------------------------------------------------------------------------
 #  Make example dataset for HEIDI           ----
 #'------------------------------------------------------------------------------
 
-table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
+
+
+table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
-  #FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+  FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+  SUM_KG_TOT = sum(LE_KG_TOT),
+  SUM_EURO_TOT = sum(LE_EURO_TOT),
   SUM_KG_HER = sum(LE_KG_HER),
   SUM_EURO_HER = sum(LE_EURO_HER),
   SUM_KG_SPR = sum(LE_KG_SPR),
@@ -275,6 +377,9 @@ summarise(
   SPATIAL = "C-SQUARE",
   No_Records = n()
 )
+
+#lisätään kokonaissaaliin arvo kaikilta merialueilta yhteensä aluskohtaisesti
+#muutetaan ICESrectanglekoodi tilastokoodiksi
 
 
 table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
