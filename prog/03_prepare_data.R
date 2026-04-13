@@ -272,38 +272,71 @@ ices_list <- ices_rect$ICESNAME
 # unique C-squares from table1
 csq <- unique(table1$Csquare)
 
-# convert to lon/lat centroids
-csq_ll <- CSquare2LonLat(csq, degrees = 0.5)
+library(sf)
+library(dplyr)
+library(purrr)
+
+# unique C-squares from table1
+csq <- unique(table1$Csquare)
+
+# get SW corner / reference coordinates of C-squares
+csq_ll <- CSquare2LonLat(csq, degrees = 0.05)
 csq_ll$Csquare <- csq
 
-csq_sf <- st_as_sf(
-  csq_ll,
-  coords = c("SI_LONG", "SI_LATI"),
-  crs = 4326,
-  remove = FALSE
-)
-#Assign c-squares to ICES rectangles
+# size of one C-square in degrees
+cellsize <- 0.05
+
+# build full square polygons
+csq_sf <- csq_ll %>%
+  mutate(
+    geometry = pmap(
+      list(SI_LONG, SI_LATI),
+      function(lon, lat) {
+        st_polygon(list(matrix(
+          c(
+            lon,         lat,
+            lon+cellsize, lat,
+            lon+cellsize, lat+cellsize,
+            lon,         lat+cellsize,
+            lon,         lat
+          ),
+          ncol = 2,
+          byrow = TRUE
+        )))
+      }
+    )
+  ) %>%
+  st_as_sf(crs = 4326)
+
+#Assign ices rectangles
+
 csq_ices <- st_join(
   csq_sf,
   ices_rect["ICESNAME"],
   join = st_intersects,
   left = TRUE
-) |>
-  group_by(Csquare) |>
-  slice(1) |>   # deterministic first match
+) %>%
+  group_by(Csquare) %>%
+  slice(1) %>%     # deterministic if multiple intersects
   ungroup()
 
-# lookup table: C-square → ICES rectangle
-csq_lut <- csq_ices |>
-  st_drop_geometry() |>
+csq_lut <- csq_ices %>%
+  st_drop_geometry() %>%
   select(Csquare, ICESrectangle = ICESNAME)
-#and join
-table1 <- table1 |>
+
+table1 <- table1 %>%
   left_join(csq_lut, by = "Csquare")
 
-#### And ices areas ####
-ices_area <- read_sf("orig/ices_data/ICES_areas/ICES_Areas_20160601_cut_dense_3857.shp")
+
+#Assign ICES areas 
+
+ices_area <- read_sf(
+  "orig/ices_data/ICES_areas/ICES_Areas_20160601_cut_dense_3857.shp"
+)
+
+# transform C-squares to same CRS as ICES areas
 csq_sf_3857 <- st_transform(csq_sf, st_crs(ices_area))
+
 csq_area <- st_join(
   csq_sf_3857,
   ices_area["SubDivisio"],
@@ -322,12 +355,9 @@ table1 <- table1 %>%
 
 stopifnot("ICESarea" %in% names(table1))
 
-###Checks
-# rectangles
 missing_rect <- table1 %>% filter(is.na(ICESrectangle))
 nrow(missing_rect)
 
-# areas
 missing_area <- table1 %>% filter(is.na(ICESarea))
 nrow(missing_area)
 
@@ -336,25 +366,9 @@ unique(missing_area$Csquare)
 
 table1 <- table1 %>%
   mutate(
-    ICESrectangle = if_else(
-      is.na(ICESrectangle), "UNKNOWN", ICESrectangle
-    ),
-    ICESarea = if_else(
-      is.na(ICESarea), "UNKNOWN", ICESarea
-    )
+    ICESrectangle = if_else(is.na(ICESrectangle), "UNKNOWN", ICESrectangle),
+    ICESarea      = if_else(is.na(ICESarea), "UNKNOWN", ICESarea)
   )
-
-#### finding missing values for ICES rectangles (for some reason they were not all matched)
-rect_area_lut <- table1 %>%
-  filter(!is.na(ICESarea)) %>%
-  distinct(ICESrectangle, ICESarea)
-
-ambiguous_rects <- rect_area_lut %>%
-  count(ICESrectangle) %>%
-  filter(n > 1)
-
-nrow(ambiguous_rects)
-
 
 
 #'------------------------------------------------------------------------------
