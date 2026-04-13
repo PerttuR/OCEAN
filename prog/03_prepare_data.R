@@ -370,6 +370,36 @@ table1 <- table1 %>%
     ICESarea      = if_else(is.na(ICESarea), "UNKNOWN", ICESarea)
   )
 
+### Add Finnish Codes for rectangles
+rect_tila_lut <- read.csv(
+  "orig/ices_data/ICESrectangles_to_tilastoruutu.csv",
+  stringsAsFactors = FALSE
+)
+
+head(rect_tila_lut)
+str(rect_tila_lut)
+
+
+rect_tila_lut <- rect_tila_lut %>%
+  rename(
+    ICESrectangle = ICESNAME,   
+    tilastoruutu  = FinnishNum
+  ) %>%
+  distinct(ICESrectangle, tilastoruutu)
+
+ambiguous_tila <- rect_tila_lut %>%
+  count(ICESrectangle) %>%
+  filter(n > 1)
+
+nrow(ambiguous_tila)
+
+table1 <- table1 %>%
+  left_join(
+    rect_tila_lut,
+    by = "ICESrectangle"
+  )
+
+
 
 #'------------------------------------------------------------------------------
 #  Make example dataset for HEIDI           ----
@@ -377,7 +407,7 @@ table1 <- table1 %>%
 
 
 
-table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
+table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, tilastoruutu, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
   FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
   SUM_KG_TOT = sum(LE_KG_TOT),
@@ -391,9 +421,6 @@ summarise(
   SPATIAL = "C-SQUARE",
   No_Records = n()
 )
-
-#lisätään kokonaissaaliin arvo kaikilta merialueilta yhteensä aluskohtaisesti
-#muutetaan ICESrectanglekoodi tilastokoodiksi
 
 
 table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
