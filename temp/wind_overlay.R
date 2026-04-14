@@ -1,6 +1,4 @@
 ####TODO
-# USE EMODNET BASEMAPS?
-
 library(sf)
 library(ggplot2)
 library(purrr)
@@ -53,7 +51,7 @@ names(wind_layers) <- c(
 
 
 
-# --- 3) Zoom box (same as you had) --------------------------------------------
+# --- 3) Zoom box --------------------------------------------
 zoom_box <- st_bbox(c(xmin = 15, ymin = 60, xmax = 28, ymax = 66), crs = 4326)
 zoom_poly <- st_as_sfc(zoom_box)
 
