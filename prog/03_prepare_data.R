@@ -542,7 +542,7 @@ ggplot() +
   ) +
   coord_sf(
     xlim = c(17, 26),   # adjust as needed
-    ylim = c(60, 65),
+    ylim = c(60.5, 65.5),
     expand = FALSE
   ) +
   theme_minimal() +
