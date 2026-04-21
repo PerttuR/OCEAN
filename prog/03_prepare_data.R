@@ -559,7 +559,7 @@ guides(colour = "none")
 #  Make example dataset for HEIDI           ----
 #'------------------------------------------------------------------------------
 
-
+### ONKO INTV TOSIAAN HOURS VAI ONKO DAYS
 
 table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, tilastoruutu, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
@@ -576,13 +576,49 @@ summarise(
   No_Records = n()
 )
 
+#### OR with WIND AREAS (hours fished in area). THIS NEEDS VALIDATION
+table1_statistics <- table1 %>%
+  group_by(
+    RecordType = RT,
+    CountryCode = VE_COU,
+    Year,
+    ICESrectangle,
+    tilastoruutu,
+    ICESarea,
+    VE_ID,
+    VesselLengthRange = LENGTHCAT) %>%
+  summarise(
+    FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+    WindHours = as.integer(sum(INTV[!is.na(WINDAREA)], na.rm = TRUE)),
+    SUM_KG_TOT = sum(LE_KG_TOT),
+    SUM_EURO_TOT = sum(LE_EURO_TOT),
+    SUM_KG_HER = sum(LE_KG_HER),
+    SUM_EURO_HER = sum(LE_EURO_HER),
+    SUM_KG_SPR = sum(LE_KG_SPR),
+    SUM_EURO_SPR = sum(LE_EURO_SPR),
+    SUM_KG_FVE = sum(LE_KG_FVE),
+    SUM_EURO_FVE = sum(LE_EURO_FVE),
 
-table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, VE_ID, VesselLengthRange = LENGTHCAT) %>%
+    SPATIAL = "C-SQUARE",
+    No_Records = n(),
+    .groups = "drop"
+  )
+
+
+table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, ICES_Rect = LE_RECT, Year, VE_ID, VesselLengthRange = LENGTHCAT, Gear = LE_GEAR, Length_Category = LENGTHCAT) %>%
   summarise(
     #FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
     #SUM_LE_KG_HER = sum(LE_KG_HER),
     #SUM_LE_KG_SPR = sum(LE_KG_SPR),
     #SUM_LE_KG_FVE = sum(LE_KG_FVE),
+    SUM_KG_TOT = sum(LE_KG_TOT),
+    SUM_EURO_TOT = sum(LE_EURO_TOT),
+    SUM_KG_HER = sum(LE_KG_HER),
+    SUM_EURO_HER = sum(LE_EURO_HER),
+    SUM_KG_SPR = sum(LE_KG_SPR),
+    SUM_EURO_SPR = sum(LE_EURO_SPR),
+    SUM_KG_FVE = sum(LE_KG_FVE),
+    SUM_EURO_FVE = sum(LE_EURO_FVE),
     SPATIAL = "ICES_RECTANGLE",
     No_Records = n()
   )
