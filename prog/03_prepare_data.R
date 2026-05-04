@@ -559,8 +559,6 @@ guides(colour = "none")
 #  Make example dataset for HEIDI           ----
 #'------------------------------------------------------------------------------
 
-### ONKO INTV TOSIAAN HOURS VAI ONKO DAYS
-
 table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, tilastoruutu, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
   FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
@@ -622,6 +620,60 @@ table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, 
     SPATIAL = "ICES_RECTANGLE",
     No_Records = n()
   )
+
+#'------------------------------------------------------------------------------
+#### NUMBER OF HOURS IN EACH ICES SQUARE AND RELATIVE CATCH ####
+#'------------------------------------------------------------------------------
+
+rect_wind_catch <- table1 %>%
+  group_by(
+    CountryCode = VE_COU,
+    Year,
+    ICESrectangle,
+    tilastoruutu,
+    #VE_ID,
+    #VesselLengthRange = LENGTHCAT,
+    ICESarea) %>%
+  summarise(
+    FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+    WindHours = as.integer(sum(INTV[!is.na(WINDAREA)], na.rm = TRUE)),
+    SUM_KG_TOT = sum(LE_KG_TOT),
+    SUM_EURO_TOT = sum(LE_EURO_TOT),
+    SUM_KG_WIND = as.integer(sum(LE_KG_TOT[!is.na(WINDAREA)], na.rm = TRUE)),
+    SUM_EURO_WIND = as.integer(sum(LE_EURO_TOT[!is.na(WINDAREA)], na.rm = TRUE)),
+    SPATIAL = "C-SQUARE",
+    No_Records = n(),
+    .groups = "drop"
+  )
+
+#### add info from table 2 ####
+table2_rect_summary <- table2 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
+  group_by(
+    Year,
+    ICESrectangle = LE_RECT
+  ) %>%
+  summarise(
+    Table2_LE_KG_TOT   = sum(LE_KG_TOT, na.rm = TRUE),
+    Table2_LE_EURO_TOT = sum(LE_EURO_TOT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+rect_wind_catch <- rect_wind_catch %>%
+  left_join(
+    table2_rect_summary,
+    by = c("Year", "ICESrectangle")
+  )
+
+
+#### FOR 31 and 32 only
+
+rect_wind_catch <- rect_wind_catch %>%
+  filter(ICESarea %in% c(31, 32))
+
+###48H5 etc virheellisiä
+
+
 
 #'------------------------------------------------------------------------------
 #  Save the final TABLE 1 and TABLE 2 to csv           ----
