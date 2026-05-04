@@ -257,7 +257,6 @@ saveRDS(table2Save, paste0(outPath, "table2Save.rds"))
 write.table(table1Save, paste0(outPath, "table1Save.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 write.table(table2Save, paste0(outPath, "table2Save.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 
-
 #'------------------------------------------------------------------------------
 #  PREPARE DATA FOR ICES AREAS AND SQUARES          ----
 #'------------------------------------------------------------------------------
@@ -626,6 +625,7 @@ table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, 
 #'------------------------------------------------------------------------------
 
 rect_wind_catch <- table1 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
   group_by(
     CountryCode = VE_COU,
     Year,
@@ -660,19 +660,63 @@ table2_rect_summary <- table2 %>%
   )
 
 rect_wind_catch <- rect_wind_catch %>%
-  left_join(
+  full_join(
     table2_rect_summary,
     by = c("Year", "ICESrectangle")
   )
 
+rect_wind_catch$ratio = rect_wind_catch$SUM_KG_TOT / rect_wind_catch$Table2_LE_KG_TOT
 
 #### FOR 31 and 32 only
 
 rect_wind_catch <- rect_wind_catch %>%
-  filter(ICESarea %in% c(31, 32))
+  filter(ICESarea %in% c(30, 31))
 
-###48H5 etc virheellisiä
+## ADD WIND AREAS VALUES
 
+rect_wind_catch$WINDEUR_Table1 = rect_wind_catch$SUM_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
+rect_wind_catch$WINDEUR_Table2 = rect_wind_catch$Table2_LE_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
+
+
+#________________________
+#### OVATKO 48H5 etc virheellisiä?? Testi, voi poistaa ####
+#______________________-
+table1_rect_summary <- table1 %>%
+  group_by(
+    Year,
+    ICESrectangle,
+    ICESarea
+  ) %>%
+  summarise(
+    Table1_SUM_KG_TOT = sum(LE_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+table2_rect_summary <- table2 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
+  group_by(
+    Year,
+    ICESrectangle = LE_RECT
+  ) %>%
+  summarise(
+    Table2_SUM_KG_TOT = sum(LE_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+rect_total_kg <- table1_rect_summary %>%
+  full_join(
+    table2_rect_summary,
+    by = c("Year", "ICESrectangle")
+  )
+
+rect_total_kg <- rect_total_kg %>%
+  mutate(
+    ratio = if_else(
+      !is.na(Table2_SUM_KG_TOT) & Table2_SUM_KG_TOT > 0,
+      Table1_SUM_KG_TOT / Table2_SUM_KG_TOT,
+      NA_real_
+    )
+  )
 
 
 #'------------------------------------------------------------------------------
