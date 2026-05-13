@@ -644,17 +644,6 @@ table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, 
   )
 
 #'------------------------------------------------------------------------------
-#### NUMBER OF HOURS IN EACH ICES SQUARE AND RELATIVE CATCH ####
-#'------------------------------------------------------------------------------
-
-
-## ADD WIND AREAS VALUES
-
-rect_wind_catch$WINDEUR_Table1 = rect_wind_catch$SUM_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
-rect_wind_catch$WINDEUR_Table2 = rect_wind_catch$Table2_LE_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
-
-
-#'------------------------------------------------------------------------------
 #### NUMBER OF HOURS IN EACH ICES SQUARE AND RELATIVE CATCH WITH VESSEL INFORMATION ####
 #'------------------------------------------------------------------------------
 
@@ -698,7 +687,10 @@ rect_total <- rect_vessel %>%
     SUM_KG_TOT = sum(SUM_KG_TOT, na.rm = TRUE),
     SUM_EURO_TOT = sum(SUM_EURO_TOT, na.rm = TRUE),
     SUM_KG_WIND = sum(SUM_KG_WIND, na.rm = TRUE),
-    SUM_EURO_WIND = sum(SUM_EURO_WIND, na.rm = TRUE),
+    Table2_LE_KG_TOT = sum(Table2_LE_KG_TOT, na.rm = TRUE),
+    Table2_LE_EURO_TOT = sum(Table2_LE_EURO_TOT, na.rm = TRUE),
+    No_Records = sum(No_Records, na.rm = TRUE),
+
     .groups = "drop"
   )
 
@@ -728,23 +720,86 @@ write.table(rect_vessel, paste0(outPath, "rect_wind_catch_Vessel.csv"), na = "",
 
 ##2010-2025 all years separate
 
+###Table1 preparation
 HugoAnnie <- table1 %>%
   filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
   filter(Month %in% c(9, 10)) %>%
-  filter(ICESarea %in% c(30)) %>%
   group_by(
     Year,
     ICESrectangle,
-    tilastoruutu
+    tilastoruutu,
+    ICESarea
     ) %>%
   summarise(
-    FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+    FishingHour = (sum(INTV, na.rm = TRUE)),
     SPATIAL = "ICES-Area",
     No_Records = n(),
     .groups = "drop"
   )
 
+### Table 2 preparation
 
+table2_HugoAnnie <- table2 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
+  filter(Month %in% c(9, 10)) %>%
+  group_by(
+    Year,
+    ICESrectangle = LE_RECT
+  ) %>%
+  summarise(
+    FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
+    Table2_LE_KG_HER   = sum(LE_KG_HER, na.rm = TRUE),
+    Table2_LE_EURO_HER = sum(LE_EURO_HER, na.rm = TRUE),
+    .groups = "drop"
+  )
+
+HugoAnnie <- HugoAnnie %>%
+  full_join(
+    table2_HugoAnnie,
+    by = c("Year", "ICESrectangle")
+  )
+
+#need to add ICESareas again (for table2 rows) AND then only take AREA 30
+
+# 1. Automatic rectangle → ICESarea lookup (from existing data)
+rect_area_lookup <- HugoAnnie %>%
+  distinct(ICESrectangle, ICESarea) %>%
+  filter(!is.na(ICESarea))
+
+# 2. Manual fixes (only where needed)
+ices_map_manual <- tibble::tribble(
+  ~ICESrectangle, ~ICESarea,
+  "50H7", 32,
+  "52G7", 30,
+  "56H2", 31,
+  "41G9", 26,
+  "59H3", 31,
+  "55H1", 30,
+  "57H4", 31,
+  "49H7", 32
+)
+
+# Combine lookup + manual (manual overrides automatically)
+rect_area_lookup_all <- bind_rows(
+  rect_area_lookup,
+  ices_map_manual
+) %>%
+  distinct(ICESrectangle, .keep_all = TRUE)
+
+# Fill missing ICESarea
+HugoAnnie <- HugoAnnie %>%
+  select(-ICESarea) %>%   # drop old column to avoid confusion
+  left_join(rect_area_lookup_all, by = "ICESrectangle")
+
+#  filter
+HugoAnnie <- HugoAnnie %>%
+  filter(ICESarea == 30)
+
+
+write.csv(HugoAnnie, "HugoAnnie_herring_catches.csv", row.names = FALSE)
+
+
+#postprocessing
 
 ices_rect_filtered <- ices_rect %>%
   filter(ICESNAME %in% HugoAnnie$ICESrectangle)
