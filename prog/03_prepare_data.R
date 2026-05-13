@@ -365,8 +365,30 @@ unique(missing_area$Csquare)
 
 table1 <- table1 %>%
   mutate(
-    ICESrectangle = if_else(is.na(ICESrectangle), "UNKNOWN", ICESrectangle),
-    ICESarea      = if_else(is.na(ICESarea), "UNKNOWN", ICESarea)
+    ICESrectangle = if_else(is.na(ICESrectangle), "99999", ICESrectangle),
+    ICESarea      = if_else(is.na(ICESarea), "999999", ICESarea)
+  )
+
+#hand picking, change this later if needed
+table1 <- table1 %>%
+  mutate(
+    ICESarea = case_when(
+      ICESrectangle == "39G4" ~ 24,
+      ICESrectangle == "41G6" ~ 25,
+      ICESrectangle == "41G7" ~ 25,
+      ICESrectangle == "41G8" ~ 26,
+      ICESrectangle == "41G9" ~ 26,
+      ICESrectangle == "44G8" ~ 27,
+      ICESrectangle == "45G9" ~ 28,
+      ICESrectangle == "45H0" ~ 28,
+      ICESrectangle == "45H1" ~ 28,
+      ICESrectangle == "47H2" ~ 29,
+      ICESrectangle == "48H2" ~ 29,
+      ICESrectangle == "49G8" ~ 29,
+      ICESrectangle == "49H1" ~ 29,
+      ICESrectangle == "50H1" ~ 30,
+      TRUE ~ as.numeric(ICESarea)
+    )
   )
 
 ### Add Finnish Codes for rectangles
@@ -558,6 +580,7 @@ guides(colour = "none")
 #  Make example dataset for HEIDI           ----
 #'------------------------------------------------------------------------------
 
+### HUOM MUKANA KAIKKI PYYDYKSET!! 256 recordia dataa.
 table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, tilastoruutu, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
 summarise(
   FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
@@ -604,7 +627,7 @@ table1_statistics <- table1 %>%
 
 table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, ICES_Rect = LE_RECT, Year, VE_ID, VesselLengthRange = LENGTHCAT, Gear = LE_GEAR, Length_Category = LENGTHCAT) %>%
   summarise(
-    #FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
+    FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
     #SUM_LE_KG_HER = sum(LE_KG_HER),
     #SUM_LE_KG_SPR = sum(LE_KG_SPR),
     #SUM_LE_KG_FVE = sum(LE_KG_FVE),
@@ -624,18 +647,22 @@ table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, 
 #### NUMBER OF HOURS IN EACH ICES SQUARE AND RELATIVE CATCH ####
 #'------------------------------------------------------------------------------
 
-rect_wind_catch <- table1 %>%
-  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
-  group_by(
-    CountryCode = VE_COU,
-    Year,
-    ICESrectangle,
-    tilastoruutu,
-    #VE_ID,
-    #VesselLengthRange = LENGTHCAT,
-    ICESarea) %>%
+
+## ADD WIND AREAS VALUES
+
+rect_wind_catch$WINDEUR_Table1 = rect_wind_catch$SUM_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
+rect_wind_catch$WINDEUR_Table2 = rect_wind_catch$Table2_LE_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
+
+
+#'------------------------------------------------------------------------------
+#### NUMBER OF HOURS IN EACH ICES SQUARE AND RELATIVE CATCH WITH VESSEL INFORMATION ####
+#'------------------------------------------------------------------------------
+
+table1_vessel <- table1 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>% ### HUOM TÄMÄ FILTERÖINTI!!
+  group_by(Year, ICESrectangle,tilastoruutu, VE_ID, ICESarea) %>%
   summarise(
-    FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+    FishingHour = as.integer(sum(INTV, na.rm = TRUE)), 
     WindHours = as.integer(sum(INTV[!is.na(WINDAREA)], na.rm = TRUE)),
     SUM_KG_TOT = sum(LE_KG_TOT),
     SUM_EURO_TOT = sum(LE_EURO_TOT),
@@ -646,77 +673,39 @@ rect_wind_catch <- table1 %>%
     .groups = "drop"
   )
 
-#### add info from table 2 ####
-table2_rect_summary <- table2 %>%
+table2_vessel <- table2 %>%
   filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
-  group_by(
-    Year,
-    ICESrectangle = LE_RECT
-  ) %>%
+  group_by(Year, ICESrectangle = LE_RECT, VE_ID) %>%
   summarise(
+    FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
     Table2_LE_KG_TOT   = sum(LE_KG_TOT, na.rm = TRUE),
     Table2_LE_EURO_TOT = sum(LE_EURO_TOT, na.rm = TRUE),
     .groups = "drop"
   )
 
-rect_wind_catch <- rect_wind_catch %>%
-  full_join(
-    table2_rect_summary,
-    by = c("Year", "ICESrectangle")
-  )
+rect_vessel <- full_join(
+  table1_vessel,
+  table2_vessel,
+  by = c("Year", "ICESrectangle", "VE_ID")
+)
 
-rect_wind_catch$ratio = rect_wind_catch$SUM_KG_TOT / rect_wind_catch$Table2_LE_KG_TOT
-
-#### FOR 31 and 32 only
-
-rect_wind_catch <- rect_wind_catch %>%
-  filter(ICESarea %in% c(30, 31))
-
-## ADD WIND AREAS VALUES
-
-rect_wind_catch$WINDEUR_Table1 = rect_wind_catch$SUM_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
-rect_wind_catch$WINDEUR_Table2 = rect_wind_catch$Table2_LE_EURO_TOT * (rect_wind_catch$WindHours/rect_wind_catch$FishingHour)
-
-
-#________________________
-#### OVATKO 48H5 etc virheellisiä?? Testi, voi poistaa ####
-#______________________-
-table1_rect_summary <- table1 %>%
-  group_by(
-    Year,
-    ICESrectangle,
-    ICESarea
-  ) %>%
+rect_total <- rect_vessel %>%
+  group_by(Year, ICESrectangle) %>%
   summarise(
-    Table1_SUM_KG_TOT = sum(LE_KG_TOT, na.rm = TRUE),
+    FishingHour = sum(FishingHour, na.rm = TRUE),
+    FishingDays_donotuse = sum(FishingDays, na.rm = TRUE),
+    WindHours = sum(WindHours, na.rm = TRUE),
+    SUM_KG_TOT = sum(SUM_KG_TOT, na.rm = TRUE),
+    SUM_EURO_TOT = sum(SUM_EURO_TOT, na.rm = TRUE),
+    SUM_KG_WIND = sum(SUM_KG_WIND, na.rm = TRUE),
+    SUM_EURO_WIND = sum(SUM_EURO_WIND, na.rm = TRUE),
     .groups = "drop"
   )
 
-table2_rect_summary <- table2 %>%
-  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
-  group_by(
-    Year,
-    ICESrectangle = LE_RECT
-  ) %>%
-  summarise(
-    Table2_SUM_KG_TOT = sum(LE_KG_TOT, na.rm = TRUE),
-    .groups = "drop"
-  )
 
-rect_total_kg <- table1_rect_summary %>%
-  full_join(
-    table2_rect_summary,
-    by = c("Year", "ICESrectangle")
-  )
+#### TESTS ####
 
-rect_total_kg <- rect_total_kg %>%
-  mutate(
-    ratio = if_else(
-      !is.na(Table2_SUM_KG_TOT) & Table2_SUM_KG_TOT > 0,
-      Table1_SUM_KG_TOT / Table2_SUM_KG_TOT,
-      NA_real_
-    )
-  )
+sum(rect_vessel$No_Records, na.rm = TRUE)
 
 
 #'------------------------------------------------------------------------------
@@ -726,7 +715,101 @@ rect_total_kg <- rect_total_kg %>%
 # Headers and quotes have been removed to be compatible with required submission and ICES SQL DB format.
 write.table(table1_statistics, paste0(outPath, "table1_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 write.table(table2_statistics, paste0(outPath, "table2_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
+write.table(rect_total, paste0(outPath, "rect_total.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
+write.table(rect_vessel, paste0(outPath, "rect_wind_catch_Vessel.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 
+
+
+
+
+#'------------------------------------------------------------------------------
+# Monthly VMS September October HUGOANNIE                                                            
+#'------------------------------------------------------------------------------
+
+##2010-2025 all years separate
+
+HugoAnnie <- table1 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
+  filter(Month %in% c(9, 10)) %>%
+  filter(ICESarea %in% c(30)) %>%
+  group_by(
+    Year,
+    ICESrectangle,
+    tilastoruutu
+    ) %>%
+  summarise(
+    FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
+    SPATIAL = "ICES-Area",
+    No_Records = n(),
+    .groups = "drop"
+  )
+
+
+
+ices_rect_filtered <- ices_rect %>%
+  filter(ICESNAME %in% HugoAnnie$ICESrectangle)
+
+# Join spatial + summary data
+HugoAnnie_sf <- ices_rect_filtered %>%
+  left_join(HugoAnnie, by = c("ICESNAME" = "ICESrectangle"))
+
+#Create a shp
+
+library(tidyr)
+
+HugoAnnie_wide <- HugoAnnie %>%
+  select(Year, ICESrectangle, FishingHour) %>%
+  pivot_wider(
+    names_from = Year,
+    values_from = FishingHour,
+    values_fill = 0
+  )
+
+HugoAnnie_shp <- ices_rect %>%
+  left_join(HugoAnnie_wide, by = c("ICESNAME" = "ICESrectangle"))
+
+st_write(HugoAnnie_shp, "HugoAnnie_by_year.shp", delete_dsn = TRUE)
+
+HugoAnnie_csv <- HugoAnnie_shp %>%
+  mutate(centroid = st_centroid(geometry)) %>%
+  mutate(
+    lon = st_coordinates(centroid)[,1],
+    lat = st_coordinates(centroid)[,2]
+  ) %>%
+  st_drop_geometry()
+
+write.csv(HugoAnnie_csv, "HugoAnnie_by_year_with_coords.csv", row.names = FALSE)
+
+
+
+#PLOTTING
+
+library(sf)
+
+# 1. Transform CRS
+HugoAnnie_sf_proj <- st_transform(HugoAnnie_sf, 3035)
+
+# 2. Create label points safely
+HugoAnnie_sf_proj <- HugoAnnie_sf_proj %>%
+  mutate(label_geom = st_point_on_surface(geometry))
+
+ggplot(HugoAnnie_sf_proj) +
+  geom_sf(aes(fill = FishingHour)) +
+
+  geom_sf_text(
+    aes(geometry = label_geom, label = ICESNAME),
+    size = 2,
+    color = "white"
+  ) +
+
+  scale_fill_viridis_c(na.value = "grey90") +
+  facet_wrap(~ Year) +
+  theme_minimal() +
+  labs(fill = "Fishing hours") +
+ geom_sf_text(
+    aes(geometry = label_geom, label = ICESNAME),
+    size = 2.5, color = "white"
+)
 
 #'------------------------------------------------------------------------------
 # End of script                                                             
