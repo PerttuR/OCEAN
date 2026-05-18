@@ -694,6 +694,57 @@ rect_total <- rect_vessel %>%
     .groups = "drop"
   )
 
+#### A different approach for Heidi
+
+table1_hours <- table1 %>%
+  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
+  group_by(
+    Year,
+    ICES_Rect = ICESrectangle,
+    VE_ID,
+    Gear = LE_GEAR
+  ) %>%
+  summarise(
+    FishingHour = sum(INTV, na.rm = TRUE),
+    WindHours   = sum(INTV[!is.na(WINDAREA)], na.rm = TRUE),
+    .groups = "drop"
+  )
+
+table2_statistics2 <- table2 %>%
+  group_by(
+    RecordType = RT,
+    CountryCode = VE_COU,
+    ICES_Rect = LE_RECT,
+    Year,
+    VE_ID,
+    VesselLengthRange = LENGTHCAT,
+    Gear = LE_GEAR,
+    Length_Category = LENGTHCAT
+  ) %>%
+  summarise(
+    FishingDays_donotuse = sum(INTV, na.rm = TRUE),
+    SUM_KG_TOT = sum(LE_KG_TOT),
+    SUM_EURO_TOT = sum(LE_EURO_TOT),
+    SUM_KG_HER = sum(LE_KG_HER),
+    SUM_EURO_HER = sum(LE_EURO_HER),
+    SUM_KG_SPR = sum(LE_KG_SPR),
+    SUM_EURO_SPR = sum(LE_EURO_SPR),
+    SUM_KG_FVE = sum(LE_KG_FVE),
+    SUM_EURO_FVE = sum(LE_EURO_FVE),
+    SPATIAL = "ICES_RECTANGLE",
+    No_Records = n(),
+    .groups = "drop"
+  )
+
+table2_statistics2 <- table2_statistics2 %>%
+  full_join(
+    table1_hours,
+    by = c("Year", "ICES_Rect", "VE_ID", "Gear")
+  ) %>%
+  mutate(
+    FishingHour = coalesce(FishingHour, 0L),
+    WindHours   = coalesce(WindHours, 0L)
+  )
 
 #### TESTS ####
 
@@ -706,7 +757,7 @@ sum(rect_vessel$No_Records, na.rm = TRUE)
 
 # Headers and quotes have been removed to be compatible with required submission and ICES SQL DB format.
 write.table(table1_statistics, paste0(outPath, "table1_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
-write.table(table2_statistics, paste0(outPath, "table2_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
+write.table(table2_statistics2, paste0(outPath, "table2_statistics.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 write.table(rect_total, paste0(outPath, "rect_total.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 write.table(rect_vessel, paste0(outPath, "rect_wind_catch_Vessel.csv"), na = "",row.names=FALSE,col.names=TRUE,sep=",",quote=FALSE)
 
