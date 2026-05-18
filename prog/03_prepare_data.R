@@ -702,7 +702,8 @@ table1_hours <- table1 %>%
     Year,
     ICES_Rect = ICESrectangle,
     VE_ID,
-    Gear = LE_GEAR
+    Gear = LE_GEAR,
+    ICESarea
   ) %>%
   summarise(
     FishingHour = sum(INTV, na.rm = TRUE),
@@ -745,6 +746,47 @@ table2_statistics2 <- table2_statistics2 %>%
     FishingHour = coalesce(FishingHour, 0L),
     WindHours   = coalesce(WindHours, 0L)
   )
+
+
+
+# 1. Automatic rectangle → ICESarea lookup (from existing data)
+rect_area_lookup <- table2_statistics2 %>%
+  distinct(ICES_Rect, ICESarea) %>%
+  filter(!is.na(ICESarea))
+
+# 2. Manual fixes (only where needed)
+ices_map_manual <- tibble::tribble(
+  ~ICES_Rect, ~ICESarea,
+  "50H7", 32,
+  "52G7", 30,
+  "56H2", 31,
+  "41G9", 26,
+  "59H3", 31,
+  "55H1", 30,
+  "57H4", 31,
+  "49H7", 32,
+  "38G7", 25,
+  "48H6", 32,
+  "55H2", 30,
+  "56G9", 31,
+  "56H3", 31,
+  "57H1", 31,
+  "58H1", 31,
+  "58H2", 31 
+)
+
+# Combine lookup + manual (manual overrides automatically)
+rect_area_lookup_all <- bind_rows(
+    rect_area_lookup,
+    ices_map_manual
+) %>%
+  distinct(ICES_Rect, .keep_all = TRUE)
+
+# Fill missing ICESarea
+table2_statistics2 <- table2_statistics2 %>%
+  select(-ICESarea) %>%   # drop old column to avoid confusion
+  left_join(rect_area_lookup_all, by = "ICES_Rect")
+
 
 #### TESTS ####
 
