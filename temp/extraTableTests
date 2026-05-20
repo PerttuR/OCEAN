@@ -1,0 +1,34 @@
+table1 %>%
+  filter(VE_REF == "FIN-1142-T", Year == 2017) %>%
+  summarise(
+    sum_FishingHour = sum(INTV, na.rm = TRUE)
+  )
+
+
+
+  ##start here ###
+
+
+  # Step 1: identify species columns
+kg_cols <- grep("^LE_KG_", colnames(table1), value = TRUE)
+kg_cols <- setdiff(kg_cols, "LE_KG_TOT")
+
+# Step 2: compute row sums
+table1$LE_KG_SUM_SPECIES <- rowSums(table1[, kg_cols], na.rm = TRUE)
+
+# Step 3: add ratio column
+table1$LE_KG_RATIO <- table1$LE_KG_TOT / table1$LE_KG_SUM_SPECIES
+
+
+  # Step 1: identify species columns
+kg_cols <- grep("^LE_KG_", colnames(eflalo), value = TRUE)
+kg_cols <- setdiff(kg_cols, "LE_KG_TOT")
+
+# Step 2: compute row sums
+eflalo$LE_KG_SUM_SPECIES <- rowSums(eflalo[, kg_cols], na.rm = TRUE)
+
+# Step 3: add ratio column
+eflalo$LE_KG_RATIO <- eflalo$LE_KG_TOT / eflalo$LE_KG_SUM_SPECIES
+
+unique(eflalo$LE_KG_RATIO)
+unique(table1$LE_KG_RATIO)

@@ -51,6 +51,7 @@ for(year in yearsToSubmit){
   # Merge the aggregated data frame with eflalo
   eflalo <- merge(eflalo, res, by = c("VE_COU", "VE_REF", "LE_CDAT"))
   
+
   # Adjust the interval and calculate kilowatt-days
   eflalo$INTV <- eflalo$INTV / eflalo$nrRecords
   eflalo$kwDays <- eflalo$VE_KW * eflalo$INTV
@@ -61,13 +62,16 @@ for(year in yearsToSubmit){
   # Define the record type
   RecordType <- "LE"
   
+
   idx_kg <- grep("LE_KG_", colnames(eflalo)[colnames(eflalo) %!in% c("LE_KG_TOTAL", "LE_KG_TOT")])
   idx_euro <- grep("LE_EURO_", colnames(eflalo)[colnames(eflalo) %!in% c("LE_EURO_TOTAL","LE_EURO_TOT")])
   
   cols_kg <- colnames(eflalo)[idx_kg]
   cols_euro <- colnames(eflalo)[idx_euro]
   cols_euro <- cols_euro[!cols_euro %in% "LE_EURO_ELE"]
-  
+
+
+
   # Define the columns to be included in the table
   cols <- c(
     "VE_REF", "VE_COU", "Year", "Month", "LE_RECT", "LE_GEAR", "LE_MET",
@@ -89,6 +93,13 @@ for(year in yearsToSubmit){
   )
   
   message(glue ("Table 2 for year {year} is completed") )
+
+### JH ADDED: ->
+tacsatEflalo <- as.data.frame(tacsatEflalo)
+cols_kg_tacsat <- grep("^LE_KG_", colnames(tacsatEflalo), value = TRUE)
+cols_kg_tacsat <- setdiff(cols_kg_tacsat, "LE_KG_TOT")
+tacsatEflalo$LE_KG_TOT <- rowSums(tacsatEflalo[, cols_kg_tacsat], na.rm = TRUE)
+### JH ADDED <-
   
   
   #'----------------------------------------------------------------------------
@@ -262,19 +273,16 @@ write.table(table2Save, paste0(outPath, "table2Save.csv"), na = "",row.names=FAL
 #'------------------------------------------------------------------------------
 
 
+library(sf)
+library(dplyr)
+library(purrr)
+
 #import ICES squares
 ices_rect <- read_sf("orig/ices_data/ICES_rectangles/ICES_Statistical_Rectangles_Eco.shp") |>
   filter(Ecoregion == "Baltic Sea")
 ices_list <- ices_rect$ICESNAME
 
 #Convert to polygons
-# unique C-squares from table1
-csq <- unique(table1$Csquare)
-
-library(sf)
-library(dplyr)
-library(purrr)
-
 # unique C-squares from table1
 csq <- unique(table1$Csquare)
 
@@ -697,7 +705,7 @@ rect_total <- rect_vessel %>%
 #### A different approach for Heidi
 
 table1_hours <- table1 %>%
-  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
+  #filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
   group_by(
     Year,
     ICES_Rect = ICESrectangle,
@@ -708,19 +716,17 @@ table1_hours <- table1 %>%
   summarise(
     FishingHour = sum(INTV, na.rm = TRUE),
     WindHours   = sum(INTV[!is.na(WINDAREA)], na.rm = TRUE),
+    No_Records_T1 = n(),
     .groups = "drop"
   )
 
 table2_statistics2 <- table2 %>%
   group_by(
-    RecordType = RT,
-    CountryCode = VE_COU,
     ICES_Rect = LE_RECT,
     Year,
     VE_ID,
     VesselLengthRange = LENGTHCAT,
     Gear = LE_GEAR,
-    Length_Category = LENGTHCAT
   ) %>%
   summarise(
     FishingDays_donotuse = sum(INTV, na.rm = TRUE),
@@ -733,7 +739,7 @@ table2_statistics2 <- table2 %>%
     SUM_KG_FVE = sum(LE_KG_FVE),
     SUM_EURO_FVE = sum(LE_EURO_FVE),
     SPATIAL = "ICES_RECTANGLE",
-    No_Records = n(),
+    No_Records_T2 = n(),
     .groups = "drop"
   )
 
@@ -791,6 +797,71 @@ table2_statistics2 <- table2_statistics2 %>%
 #### TESTS ####
 
 sum(rect_vessel$No_Records, na.rm = TRUE)
+
+
+#### Check which vessels are not in table1 (because catch in table2 is 320 000 000 higher#### 
+vessels_table1 <- table1 %>% distinct(VE_REF)
+vessels_table2 <- table2 %>% distinct(VE_REF)
+
+# In table2 but not in table1
+missing_in_table1 <- anti_join(vessels_table2, vessels_table1, by = "VE_REF")
+
+# In table1 but not in table2 (less likely your issue)
+missing_in_table2 <- anti_join(vessels_table1, vessels_table2, by = "VE_REF")
+
+#### check where there are mismatches
+
+comparison <- table2 %>%
+  filter(
+    VE_REF %in% vessels_table1$VE_REF,
+    LE_GEAR %in% target_gears
+  ) %>%
+  group_by(VE_REF, Year, LE_RECT) %>%
+  summarise(
+    t2 = sum(LE_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  left_join(
+    table1 %>%
+      group_by(VE_REF, Year, ICESrectangle) %>%
+      summarise(
+        t1 = sum(LE_KG_TOT, na.rm = TRUE),
+        .groups = "drop"
+      ),
+    by = c("VE_REF", "Year", "LE_RECT" = "ICESrectangle")
+  ) %>%
+  mutate(
+    t1 = coalesce(t1, 0),
+    diff = t2 - t1
+  )
+
+comparison %>%
+  arrange(desc(abs(diff)))
+
+comparison %>%
+  filter(diff != 0) %>%
+  arrange(desc(abs(diff)))
+
+### ONLY VESSELS
+
+comparison <- table2 %>%
+  filter(
+    VE_REF %in% vessels_table1$VE_REF,
+    LE_GEAR %in% target_gears
+  ) %>%
+  group_by(VE_REF) %>%
+  summarise(t2 = sum(LE_KG_TOT, na.rm = TRUE)) %>%
+  left_join(
+    table1 %>%
+      group_by(VE_REF) %>%
+      summarise(t1 = sum(LE_KG_TOT, na.rm = TRUE)),
+    by = "VE_REF"
+  ) %>%
+  mutate(diff = t2 - t1)
+
+comparison %>% arrange(desc(diff))
+
+sum(comparison$diff, na.rm = TRUE)
 
 
 #'------------------------------------------------------------------------------
