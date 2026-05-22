@@ -63,14 +63,22 @@ for(year in yearsToSubmit){
   RecordType <- "LE"
   
 
-  idx_kg <- grep("LE_KG_", colnames(eflalo)[colnames(eflalo) %!in% c("LE_KG_TOTAL", "LE_KG_TOT")])
-  idx_euro <- grep("LE_EURO_", colnames(eflalo)[colnames(eflalo) %!in% c("LE_EURO_TOTAL","LE_EURO_TOT")])
+  #idx_kg <- grep("LE_KG_", colnames(eflalo)[colnames(eflalo) %!in% c("LE_KG_TOTAL", "LE_KG_TOT")])        #jani removed
+  #idx_euro <- grep("LE_EURO_", colnames(eflalo)[colnames(eflalo) %!in% c("LE_EURO_TOTAL","LE_EURO_TOT")])        #jani removed
+
+  cols_kg <- grep("LE_KG_", colnames(eflalo), value = TRUE) ### JANI ADDED
+  cols_kg <- cols_kg[!cols_kg %in% c("LE_KG_TOTAL", "LE_KG_TOT")] ### JANI ADDED
+
+  # But then cols_kg is used for tacsatEflalo which has LE_KG_TOTAL, So  need to re-filter when selecting from tacsatEflalo:
+  cols_kg_tacsat <- grep("LE_KG_", colnames(tacsatEflalo), value = TRUE) ## JANI ADDED, IMPORTANT
+  cols_kg_tacsat <- cols_kg_tacsat[!cols_kg_tacsat %in% c("LE_KG_TOTAL", "LE_KG_TOT")] ## JANI ADDED, IMPORTANT
+
+  cols_euro <- grep("LE_EURO_", colnames(eflalo), value = TRUE) ### JANI ADDED
+  cols_euro <- cols_euro[!cols_euro %in% c("LE_EURO_TOTAL", "LE_EURO_TOT", "LE_EURO_ELE")] ### JANI Added. BUT WHY REMOVE ELE!!??
   
-  cols_kg <- colnames(eflalo)[idx_kg]
-  cols_euro <- colnames(eflalo)[idx_euro]
-  cols_euro <- cols_euro[!cols_euro %in% "LE_EURO_ELE"]
-
-
+  #cols_kg <- colnames(eflalo)[idx_kg]         #jani removed
+  #cols_euro <- colnames(eflalo)[idx_euro]        #jani removed
+  #cols_euro <- cols_euro[!cols_euro %in% "LE_EURO_ELE"]        #jani removed
 
   # Define the columns to be included in the table
   cols <- c(
@@ -94,12 +102,6 @@ for(year in yearsToSubmit){
   
   message(glue ("Table 2 for year {year} is completed") )
 
-### JH ADDED: ->
-tacsatEflalo <- as.data.frame(tacsatEflalo)
-cols_kg_tacsat <- grep("^LE_KG_", colnames(tacsatEflalo), value = TRUE)
-cols_kg_tacsat <- setdiff(cols_kg_tacsat, "LE_KG_TOT")
-tacsatEflalo$LE_KG_TOT <- rowSums(tacsatEflalo[, cols_kg_tacsat], na.rm = TRUE)
-### JH ADDED <-
   
   
   #'----------------------------------------------------------------------------
@@ -109,11 +111,15 @@ tacsatEflalo$LE_KG_TOT <- rowSums(tacsatEflalo[, cols_kg_tacsat], na.rm = TRUE)
   
   # Define the record type
   RecordType <- "VE"
+
+  cols_kg_tacsat <- grep("^LE_KG_", colnames(tacsatEflalo), value = TRUE)
+cols_kg_tacsat <- cols_kg_tacsat[!cols_kg_tacsat %in% c("LE_KG_TOT", "LE_KG_TOTAL")]
+cat(year, "- cols_kg_tacsat contains LE_KG_TOTAL:", "LE_KG_TOTAL" %in% cols_kg_tacsat, "\n")
   
   # Define the columns to be included in the table
   cols <- c(
     "VE_REF", "VE_COU", "Year", "Month", "Csquare", "MSFD_BBHT", "depth", "LE_GEAR",
-    "LE_MET", "SI_SP", "INTV", "VE_LEN", "kwHour", "VE_KW", "LE_KG_TOT", "LE_EURO_TOT",cols_kg, cols_euro,
+    "LE_MET", "SI_SP", "INTV", "VE_LEN", "kwHour", "VE_KW", "LE_KG_TOT", "LE_EURO_TOT",cols_kg_tacsat, cols_euro, #JANI CHANGED cols_kg to cols_kg_tacsat
     "GEARWIDTH", "SA_M2")
   
   
@@ -809,59 +815,7 @@ missing_in_table1 <- anti_join(vessels_table2, vessels_table1, by = "VE_REF")
 # In table1 but not in table2 (less likely your issue)
 missing_in_table2 <- anti_join(vessels_table1, vessels_table2, by = "VE_REF")
 
-#### check where there are mismatches
 
-comparison <- table2 %>%
-  filter(
-    VE_REF %in% vessels_table1$VE_REF,
-    LE_GEAR %in% target_gears
-  ) %>%
-  group_by(VE_REF, Year, LE_RECT) %>%
-  summarise(
-    t2 = sum(LE_KG_TOT, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  left_join(
-    table1 %>%
-      group_by(VE_REF, Year, ICESrectangle) %>%
-      summarise(
-        t1 = sum(LE_KG_TOT, na.rm = TRUE),
-        .groups = "drop"
-      ),
-    by = c("VE_REF", "Year", "LE_RECT" = "ICESrectangle")
-  ) %>%
-  mutate(
-    t1 = coalesce(t1, 0),
-    diff = t2 - t1
-  )
-
-comparison %>%
-  arrange(desc(abs(diff)))
-
-comparison %>%
-  filter(diff != 0) %>%
-  arrange(desc(abs(diff)))
-
-### ONLY VESSELS
-
-comparison <- table2 %>%
-  filter(
-    VE_REF %in% vessels_table1$VE_REF,
-    LE_GEAR %in% target_gears
-  ) %>%
-  group_by(VE_REF) %>%
-  summarise(t2 = sum(LE_KG_TOT, na.rm = TRUE)) %>%
-  left_join(
-    table1 %>%
-      group_by(VE_REF) %>%
-      summarise(t1 = sum(LE_KG_TOT, na.rm = TRUE)),
-    by = "VE_REF"
-  ) %>%
-  mutate(diff = t2 - t1)
-
-comparison %>% arrange(desc(diff))
-
-sum(comparison$diff, na.rm = TRUE)
 
 
 #'------------------------------------------------------------------------------

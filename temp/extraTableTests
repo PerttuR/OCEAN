@@ -9,15 +9,13 @@ table1 %>%
   ##start here ###
 
 
-  # Step 1: identify species columns
 kg_cols <- grep("^LE_KG_", colnames(table1), value = TRUE)
-kg_cols <- setdiff(kg_cols, "LE_KG_TOT")
+kg_cols <- setdiff(kg_cols, c("LE_KG_TOT", "LE_KG_TOTAL", "LE_KG_SUM_SPECIES", "LE_KG_RATIO"))
 
-# Step 2: compute row sums
 table1$LE_KG_SUM_SPECIES <- rowSums(table1[, kg_cols], na.rm = TRUE)
-
-# Step 3: add ratio column
 table1$LE_KG_RATIO <- table1$LE_KG_TOT / table1$LE_KG_SUM_SPECIES
+
+
 
 
   # Step 1: identify species columns
@@ -30,5 +28,30 @@ eflalo$LE_KG_SUM_SPECIES <- rowSums(eflalo[, kg_cols], na.rm = TRUE)
 # Step 3: add ratio column
 eflalo$LE_KG_RATIO <- eflalo$LE_KG_TOT / eflalo$LE_KG_SUM_SPECIES
 
+
+  # Step 1: identify species columns
+kg_cols <- grep("^LE_KG_", colnames(tacsatEflalo), value = TRUE)
+kg_cols <- setdiff(kg_cols, "LE_KG_TOT")
+
+# Step 2: compute row sums
+tacsatEflalo$LE_KG_SUM_SPECIES <- rowSums(tacsatEflalo[, kg_cols], na.rm = TRUE)
+
+# Step 3: add ratio column
+tacsatEflalo$LE_KG_RATIO <- tacsatEflalo$LE_KG_TOT / tacsatEflalo$LE_KG_SUM_SPECIES
+
+
+  # Step 1: identify species columns
+kg_cols <- grep("^LE_KG_", colnames(table2), value = TRUE)
+kg_cols <- setdiff(kg_cols, "LE_KG_TOT")
+
+# Step 2: compute row sums
+table2$LE_KG_SUM_SPECIES <- rowSums(table2[, kg_cols], na.rm = TRUE)
+
+# Step 3: add ratio column
+table2$LE_KG_RATIO <- table2$LE_KG_TOT / table2$LE_KG_SUM_SPECIES
+
+unique(tacsatEflalo$LE_KG_RATIO)
 unique(eflalo$LE_KG_RATIO)
 unique(table1$LE_KG_RATIO)
+unique(table2$LE_KG_RATIO)
+
