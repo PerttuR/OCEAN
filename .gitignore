@@ -37,6 +37,7 @@ rsconnect/
 # Data files
 *.RData
 *.csv
+!ICESrectangles_to_tilastoruutu.csv
 *.rds
 *.pdf
 *.xlsx
