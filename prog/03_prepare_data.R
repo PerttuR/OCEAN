@@ -5,12 +5,12 @@
 #
 #'------------------------------------------------------------------------------
 
-# PROJECT:     VMS datacall
+# PROJECT:     OCEAN
 # R VERSION:		4.3.2
 # PROGRAMMED:		Perttu Rantanen, Mira Sustar
-# EDITS:        Joanne Demmler
+# EDITS:        Joanne Demmler, Jani Helminen
 # UPDATE        28.3.2025
-# UPDATE:       06.Feb.2025
+# UPDATE:       May 2026
 
 run.year = 2026
 
@@ -24,6 +24,11 @@ for(year in yearsToSubmit){
   # load data
   load(file = paste0(dataPath, "cleanEflalo", year, ".RData")) 
   load(file = paste0(dataPath, "tacsatEflalo", year, ".RData"))  
+  hours <- read_excel(
+  file.path(dataPath, "hours.xlsx"),
+  sheet = "data_RECT"
+  )
+
   #'----------------------------------------------------------------------------
   # 3.1 Create table 2                                                    ----
   #'----------------------------------------------------------------------------
@@ -594,145 +599,30 @@ guides(colour = "none")
 #  Make example dataset for HEIDI           ----
 #'------------------------------------------------------------------------------
 
-### HUOM MUKANA KAIKKI PYYDYKSET!! 256 recordia dataa.
-table1_statistics <- table1 %>% group_by(RecordType = RT, CountryCode = VE_COU, Year, ICESrectangle, tilastoruutu, ICESarea, VE_ID, VesselLengthRange = LENGTHCAT) %>%
-summarise(
-  FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
-  SUM_KG_TOT = sum(LE_KG_TOT),
-  SUM_EURO_TOT = sum(LE_EURO_TOT),
-  SUM_KG_HER = sum(LE_KG_HER),
-  SUM_EURO_HER = sum(LE_EURO_HER),
-  SUM_KG_SPR = sum(LE_KG_SPR),
-  SUM_EURO_SPR = sum(LE_EURO_SPR),
-  SUM_KG_FVE = sum(LE_KG_FVE),
-  SUM_EURO_FVE = sum(LE_EURO_FVE),
-  SPATIAL = "C-SQUARE",
-  No_Records = n()
-)
-
-#### OR with WIND AREAS (hours fished in area). THIS NEEDS VALIDATION
-table1_statistics <- table1 %>%
-  group_by(
-    RecordType = RT,
-    CountryCode = VE_COU,
-    Year,
-    ICESrectangle,
-    tilastoruutu,
-    ICESarea,
-    VE_ID,
-    VesselLengthRange = LENGTHCAT) %>%
-  summarise(
-    FishingHour = as.integer(sum(INTV, na.rm = TRUE)),
-    WindHours = as.integer(sum(INTV[!is.na(WINDAREA)], na.rm = TRUE)),
-    SUM_KG_TOT = sum(LE_KG_TOT),
-    SUM_EURO_TOT = sum(LE_EURO_TOT),
-    SUM_KG_HER = sum(LE_KG_HER),
-    SUM_EURO_HER = sum(LE_EURO_HER),
-    SUM_KG_SPR = sum(LE_KG_SPR),
-    SUM_EURO_SPR = sum(LE_EURO_SPR),
-    SUM_KG_FVE = sum(LE_KG_FVE),
-    SUM_EURO_FVE = sum(LE_EURO_FVE),
-
-    SPATIAL = "C-SQUARE",
-    No_Records = n(),
-    .groups = "drop"
-  )
-
-
-table2_statistics <- table2 %>% group_by(RecordType = RT, CountryCode = VE_COU, ICES_Rect = LE_RECT, Year, VE_ID, VesselLengthRange = LENGTHCAT, Gear = LE_GEAR, Length_Category = LENGTHCAT) %>%
-  summarise(
-    FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
-    #SUM_LE_KG_HER = sum(LE_KG_HER),
-    #SUM_LE_KG_SPR = sum(LE_KG_SPR),
-    #SUM_LE_KG_FVE = sum(LE_KG_FVE),
-    SUM_KG_TOT = sum(LE_KG_TOT),
-    SUM_EURO_TOT = sum(LE_EURO_TOT),
-    SUM_KG_HER = sum(LE_KG_HER),
-    SUM_EURO_HER = sum(LE_EURO_HER),
-    SUM_KG_SPR = sum(LE_KG_SPR),
-    SUM_EURO_SPR = sum(LE_EURO_SPR),
-    SUM_KG_FVE = sum(LE_KG_FVE),
-    SUM_EURO_FVE = sum(LE_EURO_FVE),
-    SPATIAL = "ICES_RECTANGLE",
-    No_Records = n()
-  )
-
-#'------------------------------------------------------------------------------
-#### NUMBER OF HOURS IN EACH ICES SQUARE AND RELATIVE CATCH WITH VESSEL INFORMATION ####
-#'------------------------------------------------------------------------------
-
-table1_vessel <- table1 %>%
-  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>% ### HUOM TÄMÄ FILTERÖINTI!!
-  group_by(Year, ICESrectangle,tilastoruutu, VE_ID, ICESarea) %>%
-  summarise(
-    FishingHour = as.integer(sum(INTV, na.rm = TRUE)), 
-    WindHours = as.integer(sum(INTV[!is.na(WINDAREA)], na.rm = TRUE)),
-    SUM_KG_TOT = sum(LE_KG_TOT),
-    SUM_EURO_TOT = sum(LE_EURO_TOT),
-    SUM_KG_WIND = as.integer(sum(LE_KG_TOT[!is.na(WINDAREA)], na.rm = TRUE)),
-    SUM_EURO_WIND = as.integer(sum(LE_EURO_TOT[!is.na(WINDAREA)], na.rm = TRUE)),
-    SPATIAL = "C-SQUARE",
-    No_Records = n(),
-    .groups = "drop"
-  )
-
-table2_vessel <- table2 %>%
-  filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
-  group_by(Year, ICESrectangle = LE_RECT, VE_ID) %>%
-  summarise(
-    FishingDays = as.integer(sum(INTV, na.rm = TRUE)),
-    Table2_LE_KG_TOT   = sum(LE_KG_TOT, na.rm = TRUE),
-    Table2_LE_EURO_TOT = sum(LE_EURO_TOT, na.rm = TRUE),
-    .groups = "drop"
-  )
-
-rect_vessel <- full_join(
-  table1_vessel,
-  table2_vessel,
-  by = c("Year", "ICESrectangle", "VE_ID")
-)
-
-rect_total <- rect_vessel %>%
-  group_by(Year, ICESrectangle) %>%
-  summarise(
-    FishingHour = sum(FishingHour, na.rm = TRUE),
-    FishingDays_donotuse = sum(FishingDays, na.rm = TRUE),
-    WindHours = sum(WindHours, na.rm = TRUE),
-    SUM_KG_TOT = sum(SUM_KG_TOT, na.rm = TRUE),
-    SUM_EURO_TOT = sum(SUM_EURO_TOT, na.rm = TRUE),
-    SUM_KG_WIND = sum(SUM_KG_WIND, na.rm = TRUE),
-    Table2_LE_KG_TOT = sum(Table2_LE_KG_TOT, na.rm = TRUE),
-    Table2_LE_EURO_TOT = sum(Table2_LE_EURO_TOT, na.rm = TRUE),
-    No_Records = sum(No_Records, na.rm = TRUE),
-
-    .groups = "drop"
-  )
-
 #### A different approach for Heidi
 
-table1_hours <- table1 %>%
+table1_core <- table1 %>%
   #filter(LE_GEAR %in% c("OTM", "OTB", "PTM", "OTT")) %>%
   group_by(
     Year,
     ICES_Rect = ICESrectangle,
     VE_ID,
-    Gear = LE_GEAR,
-    ICESarea
+    Gear = LE_GEAR
   ) %>%
   summarise(
     FishingHour = sum(INTV, na.rm = TRUE),
     WindHours   = sum(INTV[!is.na(WINDAREA)], na.rm = TRUE),
     No_Records_T1 = n(),
+    ICESarea = list(unique(ICESarea)),
     .groups = "drop"
   )
 
-table2_statistics2 <- table2 %>%
+table2_core <- table2 %>%
   group_by(
     ICES_Rect = LE_RECT,
     Year,
     VE_ID,
-    VesselLengthRange = LENGTHCAT,
-    Gear = LE_GEAR,
+    Gear = LE_GEAR
   ) %>%
   summarise(
     FishingDays_donotuse = sum(INTV, na.rm = TRUE),
@@ -744,30 +634,35 @@ table2_statistics2 <- table2 %>%
     SUM_EURO_SPR = sum(LE_EURO_SPR),
     SUM_KG_FVE = sum(LE_KG_FVE),
     SUM_EURO_FVE = sum(LE_EURO_FVE),
-    SPATIAL = "ICES_RECTANGLE",
     No_Records_T2 = n(),
+    # keep vessel length info
+    VesselLength_list = list(unique(LENGTHCAT)),
     .groups = "drop"
   )
 
-table2_statistics2 <- table2_statistics2 %>%
+
+#### 3. JOIN (safe, no duplication) ----
+
+table2_statistics2 <- table2_core %>%
   full_join(
-    table1_hours,
+    table1_core,
     by = c("Year", "ICES_Rect", "VE_ID", "Gear")
   ) %>%
   mutate(
-    FishingHour = coalesce(FishingHour, 0L),
-    WindHours   = coalesce(WindHours, 0L)
+    FishingHour = coalesce(FishingHour, 0),
+    WindHours   = coalesce(WindHours, 0)
   )
 
+#### 4. BUILD ICESarea LOOKUP (FIX: unnest list-column) ----
 
-
-# 1. Automatic rectangle → ICESarea lookup (from existing data)
 rect_area_lookup <- table2_statistics2 %>%
+  unnest(ICESarea) %>%   # critical fix
   distinct(ICES_Rect, ICESarea) %>%
   filter(!is.na(ICESarea))
 
-# 2. Manual fixes (only where needed)
-ices_map_manual <- tibble::tribble(
+#### 5. MANUAL CORRECTIONS ----
+
+ices_map_manual <- tribble(
   ~ICES_Rect, ~ICESarea,
   "50H7", 32,
   "52G7", 30,
@@ -784,38 +679,103 @@ ices_map_manual <- tibble::tribble(
   "56H3", 31,
   "57H1", 31,
   "58H1", 31,
-  "58H2", 31 
+  "58H2", 31
 )
 
-# Combine lookup + manual (manual overrides automatically)
+#### 6. COMBINE LOOKUPS (manual overrides automatic) ----
+
 rect_area_lookup_all <- bind_rows(
-    rect_area_lookup,
-    ices_map_manual
+  ices_map_manual,   # ✅ manual first = overrides
+  rect_area_lookup
 ) %>%
   distinct(ICES_Rect, .keep_all = TRUE)
 
-# Fill missing ICESarea
+#### 7. ASSIGN CLEAN ICESarea BACK ----
+
 table2_statistics2 <- table2_statistics2 %>%
-  select(-ICESarea) %>%   # drop old column to avoid confusion
+  select(-ICESarea) %>%   # remove list-column
   left_join(rect_area_lookup_all, by = "ICES_Rect")
+
+#### 8. JOIN HOURS ----
+
+table2_statistics2 <- table2_statistics2 %>%
+  full_join(
+    hours,
+    by = c(
+      "Year" = "KALASTUSVUOSI",
+      "ICES_Rect" = "RECTANGLE",
+      "VE_ID" = "ULKOINENTUNNUS"
+    )
+  )
+
+#combine trawl gears into one
+table2_statistics2 <- table2_statistics2 %>%
+  mutate(
+    Gear_group = ifelse(Gear %in% c("OTM", "PTM", "OTB"), "OTM/PTM/OTB", Gear)
+  )
+
+
+table2_statistics2 <- table2_statistics2 %>%
+  arrange(Year, ICES_Rect, VE_ID, Gear) %>%
+  group_by(Year, ICES_Rect, VE_ID) %>%
+  mutate(
+    trawl_flag = Gear %in% c("OTM", "PTM", "OTB"),
+    trawl_order = cumsum(trawl_flag),
+    hours = ifelse(trawl_flag & trawl_order == 1, hours, NA),
+    Check  = ifelse(trawl_flag & trawl_order == 1, Check, NA)
+  ) %>%
+  ungroup()
+
+### manually add one erroneous row
+
+table2_statistics2 <- table2_statistics2 %>%
+  mutate(
+    trawl_flag = ifelse(
+      VE_ID == "XX" & ICES_Rect == "59H5" & Year == 2024,
+      TRUE,
+      trawl_flag
+    ),
+    Gear_group = ifelse(
+      VE_ID == "XX" & ICES_Rect == "59H5" & Year == 2024,
+      "OTM/PTM/OTB",
+      Gear_group
+    ),
+    Check = ifelse(
+      VE_ID == "XX" & ICES_Rect == "59H5" & Year == 2024,
+      1,
+      Check
+    ),
+    hours = ifelse(
+      VE_ID == "XX" & ICES_Rect == "59H5" & Year == 2024,
+      4.8,
+      hours
+    )
+  )
+
+table2_statistics2 <- table2_statistics2 %>%
+  mutate(
+    ICESarea = sapply(ICESarea, paste, collapse = ","),
+    VesselLength_list = sapply(VesselLength_list, paste, collapse = ",")
+  )
+
+
+
+# NOTE:
+# Manual correction applied for VE_ID XX, ICES_Rect 59H5, Year 2024, 4.8 h
+# Reason: effort present in hours but missing from table2 (no catch record)
+
 
 
 #### TESTS ####
 
-sum(rect_vessel$No_Records, na.rm = TRUE)
+###katso
 
+sum(table2_statistics2$hours, na.rm = TRUE)
+sum(hours$hours, na.rm = TRUE)
+sum(table2_statistics2$Check, na.rm = TRUE)
+sum(hours$Check, na.rm = TRUE)
 
-#### Check which vessels are not in table1 (because catch in table2 is 320 000 000 higher#### 
-vessels_table1 <- table1 %>% distinct(VE_REF)
-vessels_table2 <- table2 %>% distinct(VE_REF)
-
-# In table2 but not in table1
-missing_in_table1 <- anti_join(vessels_table2, vessels_table1, by = "VE_REF")
-
-# In table1 but not in table2 (less likely your issue)
-missing_in_table2 <- anti_join(vessels_table1, vessels_table2, by = "VE_REF")
-
-
+sum(!is.na(table2_statistics2$hours)) #for count
 
 
 #'------------------------------------------------------------------------------
