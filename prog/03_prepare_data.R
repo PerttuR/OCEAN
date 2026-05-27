@@ -12,6 +12,12 @@
 # UPDATE        28.3.2025
 # UPDATE:       May 2026
 
+library(purrr)
+library(sf)
+library(dplyr)
+
+
+
 run.year = 2026
 
 #rm(list = ls())
@@ -452,57 +458,118 @@ library(sf)
 library(dplyr)
 library(purrr)
 
-EBBA <- read_sf("maps/Merituulivoima-alueita/EBBA_hankealue/EBBA_hankealue.shp")
-EDITH <- read_sf("maps/Merituulivoima-alueita/Edith_hankealue/Hankerajaus_Närpiö_1_km_etelään.shp")
-KORS <- read_sf("maps/Merituulivoima-alueita/Korsnäs/FIKOR01WF_BDSB_SiBdry_v05_230719dehm25834_ExtObjID4.shp")
-KRIST <- read_sf("maps/Merituulivoima-alueita/Kristiinankaupunki/Hankerajaus_Kristiinankaupunki.shp")
+#Suomi:
+# EBBA <- read_sf("maps/Merituulivoima-alueita/EBBA_hankealue/EBBA_hankealue.shp")
+# EDITH <- read_sf("maps/Merituulivoima-alueita/Edith_hankealue/Hankerajaus_Närpiö_1_km_etelään.shp")
+# KORS <- read_sf("maps/Merituulivoima-alueita/Korsnäs/FIKOR01WF_BDSB_SiBdry_v05_230719dehm25834_ExtObjID4.shp")
+# KRIST <- read_sf("maps/Merituulivoima-alueita/Kristiinankaupunki/Hankerajaus_Kristiinankaupunki.shp")
 MAA <- read_sf("maps/Merituulivoima-alueita/Maanahkiainen/Maanahkiainen,_varausalue.shp")
 ALUEV <- read_sf("maps/Merituulivoima-alueita/Merituulivoima_alueet_luke/Aluevesien_hankkeet.shp")
-RUOTSI <- read_sf("maps/Merituulivoima-alueita/Merituulivoima_alueet_luke/Ruotsin_alueet.shp")
 BB_NORTH <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Bay North.shp")
 BB_SOUTH <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Bay South.shp")
 BB_EAST <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Sea East.shp")
 BB_WEST <- read_sf("maps/Merituulivoima-alueita/Paikkatiedot SOVA_TV-alueet_gov/Bothnian Sea West.shp")
 POOKI <- read_sf("maps/Merituulivoima-alueita/Pooki/Pooki,_varausalue.shp")
-SELJA_E <- read_sf("maps/Merituulivoima-alueita/Seljänsuunmatala Itäinen/Seljänsuunmatala_itä.shp")
-SELJA_W <- read_sf("maps/Merituulivoima-alueita/Seljänsuunmatala Läntinen/Seljänsuunmatala_länsi.shp")
-TAHKO <- read_sf("maps/Merituulivoima-alueita/Tahkoluoto/tahkoluoto,_laajennus_ja_tuotannossa_oleva_käyttöoikeusalue.shp")
+# SELJA_E <- read_sf("maps/Merituulivoima-alueita/Seljänsuunmatala Itäinen/Seljänsuunmatala_itä.shp")
+# SELJA_W <- read_sf("maps/Merituulivoima-alueita/Seljänsuunmatala Läntinen/Seljänsuunmatala_länsi.shp")
+# TAHKO <- read_sf("maps/Merituulivoima-alueita/Tahkoluoto/tahkoluoto,_laajennus_ja_tuotannossa_oleva_käyttöoikeusalue.shp")
+
+#For Sweden, we downloaded from https://ext-geodatakatalog.lansstyrelsen.se/GeodataKatalogen/srv/swe/catalog.search#/map on 27 May 2026
+# ändringsansökan → application for amendment / modification application
+# tillståndsansökan beviljad → permit application approved
+# samråd inför tillståndsansökan → consultation prior to permit application
+# tillståndsansökan inlämnad → permit application submitted
+# inledande undersökningar → initial investigations / preliminary studies
+# inte aktuell eller återkallad → not applicable or withdrawn
+#Tämä on korvattu:
+# RUOTSI <- read_sf("maps/Merituulivoima-alueita/Merituulivoima_alueet_luke/Ruotsin_alueet.shp")
+amendment <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/Application_for_amendment.shp")
+submitted <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/application_submitted.shp")
+consult <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/consultation_prior_to_application.shp")
+initial <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/initial_investigations.shp")
+withdrawn <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/Not_applicable_or_withdrawn.shp")
+approved <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/permit_application_approved.shp")
 
 
-wind_layers <- list(
-  EBBA      = EBBA,
-  EDITH     = EDITH,
-  KORS      = KORS,
-  KRIST     = KRIST,
-  MAA       = MAA,
-  ALUEV     = ALUEV,
-  RUOTSI    = RUOTSI,
-  BB_NORTH  = BB_NORTH,
-  BB_SOUTH  = BB_SOUTH,
-  BB_EAST   = BB_EAST,
-  BB_WEST   = BB_WEST,
-  POOKI     = POOKI,
-  SELJA_E   = SELJA_E,
-  SELJA_W   = SELJA_W,
-  TAHKO     = TAHKO
+
+clean_layer <- function(x, target_crs) {
+  x |>
+    st_as_sf() |>
+    st_make_valid() |>
+    st_transform(target_crs) |>
+    st_cast("MULTIPOLYGON") |>
+    select(geometry)   # 🔑 drop attributes (avoid all type issues)
+}
+
+target_crs <- st_crs(MAA)
+
+wind_layers_clean <- list(
+  MAA      = clean_layer(MAA, target_crs),
+  ALUEV    = clean_layer(ALUEV, target_crs),
+  BB_NORTH = clean_layer(BB_NORTH, target_crs),
+  BB_SOUTH = clean_layer(BB_SOUTH, target_crs),
+  BB_EAST  = clean_layer(BB_EAST, target_crs),
+  BB_WEST  = clean_layer(BB_WEST, target_crs),
+  POOKI    = clean_layer(POOKI, target_crs),
+
+  amendment = clean_layer(amendment, target_crs),
+  submitted = clean_layer(submitted, target_crs),
+  consult   = clean_layer(consult, target_crs),
+  initial   = clean_layer(initial, target_crs),
+  withdrawn = clean_layer(withdrawn, target_crs),
+  approved  = clean_layer(approved, target_crs)
 )
 
+
+# wind_layers <- list(
+#   #EBBA      = EBBA,
+#   #EDITH     = EDITH,
+#   #KORS      = KORS,
+#   #KRIST     = KRIST,
+#   MAA       = MAA,
+#   ALUEV     = ALUEV,
+#   #RUOTSI    = RUOTSI,
+#   BB_NORTH  = BB_NORTH,
+#   BB_SOUTH  = BB_SOUTH,
+#   BB_EAST   = BB_EAST,
+#   BB_WEST   = BB_WEST,
+#   POOKI     = POOKI,
+#   #SELJA_E   = SELJA_E,
+#   #SELJA_W   = SELJA_W,
+#   #TAHKO     = TAHKO
+#   amendment = amendment,
+#   submitted = submitted,
+#   consult = consult,
+#   initial = initial,
+#   withdrawn = withdrawn,
+#   approved = approved
+# )
+
+all_geom <- do.call(c, lapply(wind_layers_clean, st_geometry))
+
+merged <- st_union(all_geom)
+
+wind_FIN <- wind_layers[names(wind_layers) == toupper(names(wind_layers))]
+wind_SWE <- wind_layers[names(wind_layers) != toupper(names(wind_layers))]
+
+
+
 # clean geometries + CRS
-wind_layers <- imap(
+wind_layers_clean <- imap(
   wind_layers,
-  ~ st_make_valid(.x) |>
-    st_transform(st_crs(csq_sf))
+  ~ st_make_valid(.x) |> st_transform(st_crs(csq_sf))
 )
 
 wind_hits <- imap_dfr(
-  wind_layers,
+  wind_layers_clean,
   function(wind_sf, nm) {
 
+    wind_group <- ifelse(nm == toupper(nm), "FIN", "SWE")
     hits <- st_intersects(csq_sf, wind_sf)
 
     tibble(
-      Csquare = csq_sf$Csquare[ lengths(hits) > 0 ],
-      WINDAREA = nm
+      Csquare = csq_sf$Csquare[lengths(hits) > 0],
+      WINDAREA = wind_group
     )
   }
 )
@@ -514,16 +581,11 @@ csq_wind <- wind_hits %>%
     .groups = "drop"
   )
 
-table1 <- table1 %>%
+csq_poly_plot <- csq_sf %>%
   left_join(csq_wind, by = "Csquare")
 
-#Plotting a map
 
-csq_poly_plot <- csq_sf %>%
-  left_join(
-    table1 %>% select(Csquare, WINDAREA) %>% distinct(),
-    by = "Csquare"
-  )
+
 
 library(ggplot2)
 
@@ -554,8 +616,12 @@ wind_plot_sf <- purrr::imap_dfr(
   wind_layers,
   ~ st_make_valid(.x) %>%
       st_transform(st_crs(csq_poly_plot)) %>%
-      mutate(WINDNAME = .y)
+      select(geometry) %>%                
+      mutate(
+        WINDNAME = ifelse(.y == toupper(.y), "FIN", "SWE")
+      )
 )
+
 
 ggplot() +
   # base: all C-squares
