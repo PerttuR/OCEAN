@@ -1,6 +1,17 @@
 #ICES Rectangles
 ices_rect <- read_sf("orig/ices_data/ICES_rectangles/ICES_Statistical_Rectangles_Eco.shp")
 
+### load data from 03_prepare_data
+
+
+library(sf)
+library(ggplot2)
+library(dplyr)
+
+csq_poly_plot  <- readRDS("csq_poly_plot.rds")
+wind_plot_sf   <- readRDS("wind_plot_sf.rds")
+
+
 # snip to Ecoregion Baltic
 ices_rect <- ices_rect |> filter(Ecoregion == "Baltic Sea")
 ices_list <- ices_rect$ICESNAME
@@ -427,3 +438,109 @@ plots <- lapply(plots, function(p) {
 pdf("WINDMILL_and_Value_from_VMS_2016_2025_VMS_RESOLUUTIO_KARKEA.pdf", width = 8, height = 6)
 invisible(purrr::iwalk(plots, ~ print(.x)))
 dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+###### Jani tests here
+
+#preparation
+library(ggspatial)
+ices_rect <- st_transform(ices_rect, st_crs(csq_poly_plot))
+names(sf_list)
+
+year_sel <- "2016"   # any year
+csq_year <- sf_list[[year_sel]]
+csq_year <- st_transform(csq_year, st_crs(csq_poly_plot))
+
+
+
+ggplot() +
+
+  # ices recs
+  geom_sf(
+  data = ices_rect,
+  fill = NA,
+  colour = "grey80",   # very light
+  linewidth = 0.2
+) +
+
+  # background countries
+  geom_sf(
+    data = baltic,
+    fill = "grey95",
+    colour = "grey60",
+    linewidth = 0.2
+  ) +
+  
+  geom_sf(
+  data = csq_year,
+  aes(fill = FishingHours),   # or TotValue / TotWeight
+  colour = NA                 # cleaner for heatmap
+)+
+
+  scale_fill_viridis_c(
+  option = "cividis",
+  direction = -1,
+  trans = "sqrt",     # 🔑 useful if values skewed
+  na.value = "grey90",
+  name = "Fishing hours",
+  oob = scales::squish
+)+
+
+  # wind polygons (clean styling)
+  geom_sf(
+    data = wind_plot_sf,
+    aes(colour = WINDNAME),
+    fill = NA,
+    linewidth = 0.5
+  ) +
+
+  coord_sf(
+    xlim = c(17, 25.62),
+    ylim = c(59.8, 66),
+    expand = FALSE,
+  label_graticule = "SW"    # show labels on South & West
+) +
+
+  scale_colour_manual(
+    values = c(
+      "FIN" = "#1f78b4",
+      "SWE" = "#33a02c"
+    )
+  ) +
+
+theme_minimal() +
+theme(
+  panel.grid = element_blank(),
+  axis.text = element_text(size = 10, colour = "black"),
+  axis.title = element_blank(),
+  axis.ticks = element_line(),
+  axis.ticks.length = unit(2, "pt"),
+  axis.text.x.top = element_blank(),
+  axis.text.y.right = element_blank(),
+  axis.ticks.x.top = element_blank(),
+  axis.ticks.y.right = element_blank()
+) +
+  
+
+annotation_scale(location = "bl", width_hint = 0.3) +
+
+annotation_north_arrow(
+  location = "tl",
+  height = unit(0.5, "cm"),
+  width  = unit(0.5, "cm")
+) +
+
+  labs(
+    title = "XX",
+    colour = "Country"
+  )

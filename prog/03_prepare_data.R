@@ -490,6 +490,8 @@ initial <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/initial_investigatio
 withdrawn <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/Not_applicable_or_withdrawn.shp")
 approved <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/permit_application_approved.shp")
 
+#Then, added 0,0012 degree buffer (approx 140 m in this area) before dissolving into one feature for this:
+swe_all <- read_sf("maps/Merituulivoima-alueita/ruotsi_uusi/Swe_combined_dissolved.shp")
 
 
 clean_layer <- function(x, target_crs) {
@@ -503,7 +505,7 @@ clean_layer <- function(x, target_crs) {
 
 target_crs <- st_crs(MAA)
 
-wind_layers_clean <- list(
+wind_layers <- list(
   MAA      = clean_layer(MAA, target_crs),
   ALUEV    = clean_layer(ALUEV, target_crs),
   BB_NORTH = clean_layer(BB_NORTH, target_crs),
@@ -512,46 +514,18 @@ wind_layers_clean <- list(
   BB_WEST  = clean_layer(BB_WEST, target_crs),
   POOKI    = clean_layer(POOKI, target_crs),
 
-  amendment = clean_layer(amendment, target_crs),
-  submitted = clean_layer(submitted, target_crs),
-  consult   = clean_layer(consult, target_crs),
-  initial   = clean_layer(initial, target_crs),
-  withdrawn = clean_layer(withdrawn, target_crs),
-  approved  = clean_layer(approved, target_crs)
+  swe_all = clean_layer(amendment, target_crs) #,
+  # amendment = clean_layer(amendment, target_crs),
+  # submitted = clean_layer(submitted, target_crs),
+  # consult   = clean_layer(consult, target_crs),
+  # initial   = clean_layer(initial, target_crs),
+  # withdrawn = clean_layer(withdrawn, target_crs),
+  # approved  = clean_layer(approved, target_crs)
 )
 
 
-# wind_layers <- list(
-#   #EBBA      = EBBA,
-#   #EDITH     = EDITH,
-#   #KORS      = KORS,
-#   #KRIST     = KRIST,
-#   MAA       = MAA,
-#   ALUEV     = ALUEV,
-#   #RUOTSI    = RUOTSI,
-#   BB_NORTH  = BB_NORTH,
-#   BB_SOUTH  = BB_SOUTH,
-#   BB_EAST   = BB_EAST,
-#   BB_WEST   = BB_WEST,
-#   POOKI     = POOKI,
-#   #SELJA_E   = SELJA_E,
-#   #SELJA_W   = SELJA_W,
-#   #TAHKO     = TAHKO
-#   amendment = amendment,
-#   submitted = submitted,
-#   consult = consult,
-#   initial = initial,
-#   withdrawn = withdrawn,
-#   approved = approved
-# )
-
-all_geom <- do.call(c, lapply(wind_layers_clean, st_geometry))
-
-merged <- st_union(all_geom)
-
 wind_FIN <- wind_layers[names(wind_layers) == toupper(names(wind_layers))]
 wind_SWE <- wind_layers[names(wind_layers) != toupper(names(wind_layers))]
-
 
 
 # clean geometries + CRS
@@ -586,7 +560,6 @@ csq_poly_plot <- csq_sf %>%
 
 
 
-
 library(ggplot2)
 
 ggplot() +
@@ -615,8 +588,8 @@ ggplot() +
 wind_plot_sf <- purrr::imap_dfr(
   wind_layers,
   ~ st_make_valid(.x) %>%
-      st_transform(st_crs(csq_poly_plot)) %>%
-      select(geometry) %>%                
+      st_transform(4326) %>%      # 🔑 CRITICAL FIX
+      select(geometry) %>%
       mutate(
         WINDNAME = ifelse(.y == toupper(.y), "FIN", "SWE")
       )
@@ -658,6 +631,12 @@ ggplot() +
   )
 
 guides(colour = "none")
+
+
+### Save for mapping
+
+saveRDS(csq_poly_plot, "csq_poly_plot.rds")
+saveRDS(wind_plot_sf, "wind_plot_sf.rds")
 
 
 
