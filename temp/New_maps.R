@@ -12,6 +12,8 @@ library(tibble)
 library(rnaturalearth)
 library(csquares)
 
+#define label acc
+options(scipen = 999)
 
 # =========================
 # 2. EMODnet WIND DATA
@@ -93,7 +95,7 @@ label_fix <- tibble::tribble(
 )
 
 # =========================
-# 5. FISHING DATA (UNCHANGED LOGIC)
+# 5. FISHING DATA
 # =========================
 
 table1 <- readRDS("out/table1save.rds")
@@ -137,7 +139,7 @@ sf_list <- sf_list %>%
   purrr::map(~ .x %>%
     filter(
       suppressWarnings(
-        st_coordinates(st_centroid(.))[,2] >= 60.5
+        st_coordinates(st_centroid(.))[,2] >= 60
       )
     )
   )
@@ -151,7 +153,7 @@ sf_list <- sf_list %>%
 ices_rect <- st_transform(ices_rect, 4326)
 baltic    <- st_transform(baltic, 4326)
 
-year_sel <- "2016"
+year_sel <- "2023"
 
 csq_year <- sf_list[[year_sel]] %>%
   st_transform(4326)
@@ -365,8 +367,9 @@ ggplot() +
 
   scale_fill_viridis_c(
     option = "plasma",
-    name = "% fishing in wind areas",
-    na.value = "grey90"
+    name = "", #% fishing in wind areas 
+    na.value = "grey90",
+    labels = scales::label_number(big.mark = " ")
   ) +
 
   coord_sf(
@@ -383,3 +386,399 @@ ggplot() +
   labs(
     title = paste("Share of fishing affected by wind farms –", year_sel)
   )
+
+
+
+##### Creating a df with % of hours in and out of wind areas
+
+calc_ices_year <- function(year_sel, sf_list, ices_rect, wind_FIN, wind_SWE) {
+
+  csq_year <- sf_list[[as.character(year_sel)]] %>%
+    st_transform(4326)
+
+  # intersections
+  hits_FIN <- st_intersects(csq_year, wind_FIN)
+  hits_SWE <- st_intersects(csq_year, wind_SWE)
+
+  csq_year <- csq_year %>%
+    mutate(
+      in_FIN = lengths(hits_FIN) > 0,
+      in_SWE = lengths(hits_SWE) > 0,
+      wind   = in_FIN | in_SWE
+    )
+
+  # attach ICES rectangles
+  csq_year <- st_join(
+    csq_year,
+    ices_rect["ICESNAME"],
+    left = TRUE
+  )
+
+  # aggregate
+  ices_summary <- csq_year %>%
+    st_drop_geometry() %>%
+    group_by(ICESNAME) %>%
+    summarise(
+      TotalHours = sum(FishingHours, na.rm = TRUE),
+      WindHours  = sum(FishingHours[wind], na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      PercWind = 100 * WindHours / TotalHours,
+      Year = year_sel
+    )
+
+  return(ices_summary[, c("ICESNAME", "Year", "PercWind")])
+}
+
+years <- 2016:2025
+
+ices_all <- purrr::map_dfr(
+  years,
+  ~ calc_ices_year(.x, sf_list, ices_rect, wind_FIN, wind_SWE)
+)
+
+library(tidyr)
+
+ices_wide <- ices_all %>%
+  pivot_wider(
+    names_from = Year,
+    values_from = PercWind
+  )
+
+ices_wide <- ices_wide %>%
+  rowwise() %>%
+  mutate(
+    Mean = mean(c_across(`2016`:`2025`), na.rm = TRUE),
+    SD   = sd(c_across(`2016`:`2025`), na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+ices_final <- ices_rect
+
+for (col in colnames(ices_wide)[-1]) {
+  ices_final[[col]] <- ices_wide[[col]][
+    match(ices_final$ICESNAME, ices_wide$ICESNAME)
+  ]
+}
+
+### Filter only for Areas 30 and 31
+ices_area_sub <- ices_area_crop %>%
+  filter(SubDivisio %in% c(30, 31))
+
+ices_rect_sub <- ices_rect[
+  lengths(
+    st_within(
+      st_centroid(ices_rect),
+      ices_area_sub
+    )
+  ) > 0,
+]
+
+ices_final_sub <- st_filter(
+  ices_final,
+  ices_area_sub
+)
+
+ices_rect_sub <- ices_rect_sub %>%
+  filter(!ICESNAME %in% c("49G8", "49G9", "49H0", "49H1"))
+
+ices_final_sub <- ices_final_sub %>%
+  filter(!ICESNAME %in% c("49G8", "49G9", "49H0", "49H1"))
+
+
+
+### plot ICES
+
+plot_ices_map <- function(data_sf, varname, title_text) {
+
+  ggplot() +
+
+    geom_sf(
+      data = ices_area,
+      fill = NA,
+      colour = "grey50",
+      linewidth = 0.3,
+      linetype = "dotted"
+    ) +
+
+    # geom_sf(
+    #   data = ices_rect,
+    #   fill = NA,
+    #   colour = "grey80",
+    #   linewidth = 0.2
+    # ) +
+
+    geom_sf(
+      data = data_sf,
+      aes(fill = .data[[varname]]),
+      colour = "grey40",
+      linewidth = 0.2
+    ) +
+    
+    geom_sf(
+      data = baltic,
+      fill = NA,
+      colour = "black",
+      linewidth = 0.4
+    ) +
+
+    scale_fill_viridis_c(
+      option = "plasma",
+      name = "CHHANGE PER PLOT .", #% fishing in wind areas
+      na.value = "grey90"
+    ) +
+
+    # geom_sf(
+    #   data = wind_planned,
+    #   aes(colour = country),
+    #   fill = NA,
+    #   linewidth = 0.5
+    # ) +
+
+    # scale_colour_manual(
+    #   values = c(
+    #     "Finland" = "white",
+    #     "Sweden"  = "grey"
+    #   )
+    # ) +
+
+    coord_sf(
+      xlim = c(17, 25.62),
+      ylim = c(60.4, 66),
+      expand = FALSE
+    ) +
+
+    theme_minimal() +
+    theme(panel.grid = element_blank()) +
+
+    annotation_scale(location = "tl", width_hint = 0.3) +
+
+    # annotation_north_arrow(
+    #   location = "br",
+    #   height = unit(0.5, "cm"),
+    #   width  = unit(0.5, "cm"),
+    #   pad_y = unit(0.8, "cm"),
+    #   style = north_arrow_minimal
+    # ) +
+
+    labs(
+      title = title_text,
+      fill = "", #% fishing in wind areas
+      colour = "Country"
+    )
+}
+
+years <- 2016:2025
+
+plots_years <- lapply(years, function(y) {
+  plot_ices_map(ices_final_sub, as.character(y),
+                paste("Share of fishing in wind areas –", y))
+})
+
+plots_years[[1]]  # 2016
+
+
+plot_mean <- plot_ices_map(ices_final_sub, 
+  "Mean",
+  "Average share of fishing in wind areas (2016–2025)"
+)
+
+plot_sd <- plot_ices_map(ices_final_sub,
+  "SD",
+  "Variability (SD) of fishing share in wind areas (2016–2025)"
+)
+
+p1 <- plot_ices_map(ices_final_sub, "Mean", "Mean % fishing in wind areas")
+p2 <- plot_ices_map(ices_final_sub, "SD", "SD of % fishing")
+
+library(patchwork)
+p1 + p2
+
+# ###save
+
+# dir.create("maps", showWarnings = FALSE)
+
+# # yearly maps
+# for (y in years) {
+#   ggsave(
+#     filename = paste0("maps/map_", y, ".png"),
+#     plot = plot_ices_map(ices_final_sub, as.character(y),
+#                          paste("Fishing in wind areas –", y)),
+#     width = 7,
+#     height = 8,
+#     dpi = 300
+#   )
+# }
+
+# # mean + sd
+# ggsave("maps/map_mean.png", plot_mean, width = 7, height = 8, dpi = 300)
+# ggsave("maps/map_sd.png",   plot_sd,   width = 7, height = 8, dpi = 300)
+
+
+
+##### Allokoidut tulokset maps
+
+
+allokoidut <- read_excel(
+  file.path(dataPath, "Allokoidut_tulokset_saaliinarvolla.xlsx"),
+  sheet = "Isot_troolarit"
+  )
+#edit year
+allokoidut <- allokoidut %>%
+  mutate(
+    Year = 2000 + vuosi
+  )
+#aggregate
+allokoidut_sum <- allokoidut %>%
+  group_by(ICES_Rect, Year) %>%
+  summarise(
+    liikevaihto = sum(jalostusarvo_tv, na.rm = TRUE), #kayttokate_tv #liikevaihto_tv #nettotulos_tv #jalostusarvo_tv
+    .groups = "drop"
+  )
+
+#make wide to match map data
+library(tidyr)
+
+allokoidut_wide <- allokoidut_sum %>%
+  pivot_wider(
+    names_from = Year,
+    values_from = liikevaihto
+  )
+
+#attach to ploygons
+for (col in colnames(allokoidut_wide)[-1]) {
+  ices_final_sub[[paste0("rev_", col)]] <-
+    allokoidut_wide[[col]][
+      match(ices_final_sub$ICESNAME, allokoidut_wide$ICES_Rect)
+    ]
+}
+
+#compute summary
+ices_final_sub <- ices_final_sub %>%
+  rowwise() %>%
+  mutate(
+    rev_Mean = mean(c_across(rev_2016:rev_2024), na.rm = TRUE),
+    rev_SD   = sd(c_across(rev_2016:rev_2024), na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+plot_ices_map(ices_final_sub, "rev_2016", "Revenue – 2016")
+
+
+p1 <- plot_ices_map(ices_final_sub, "rev_Mean", "Average jalostusarvo_tv (2016–2025)")
+p2 <- plot_ices_map(ices_final_sub, "rev_SD",   "jalostusarvo_tv variability (SD)")
+
+p1 + p2
+
+
+
+#### different map: percentage of impacted areas
+
+
+calc_ices_year_share <- function(year_sel, sf_list, ices_rect_sub, wind_FIN, wind_SWE) {
+
+  # get fishing grid for the year
+  csq_year <- sf_list[[as.character(year_sel)]] %>%
+    st_transform(4326)
+
+  # attach ICES rectangles (SubDiv 30–31 only)
+  csq_year <- st_join(
+    csq_year,
+    ices_rect_sub,
+    left = TRUE
+  ) %>%
+    filter(!is.na(ICESNAME))
+
+  # compute wind intersections
+  hits_FIN <- st_intersects(csq_year, wind_FIN)
+  hits_SWE <- st_intersects(csq_year, wind_SWE)
+
+  csq_year <- csq_year %>%
+    mutate(
+      wind = (lengths(hits_FIN) > 0) | (lengths(hits_SWE) > 0)
+    )
+
+  # aggregate per ICES rectangle
+  ices_summary <- csq_year %>%
+    st_drop_geometry() %>%
+    group_by(ICESNAME) %>%
+    summarise(
+      WindHours = sum(FishingHours[wind], na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  # total impacted fishing in that year
+  total_wind_hours <- sum(ices_summary$WindHours, na.rm = TRUE)
+
+  # avoid division by zero
+  if (total_wind_hours == 0) {
+    ices_summary$ShareWind <- NA
+  } else {
+    ices_summary <- ices_summary %>%
+      mutate(
+        ShareWind = 100 * WindHours / total_wind_hours
+      )
+  }
+
+  ices_summary$Year <- year_sel
+
+  return(ices_summary[, c("ICESNAME", "Year", "ShareWind")])
+}
+
+ices_all_share <- purrr::map_dfr(
+  2016:2025,
+  ~ calc_ices_year_share(.x, sf_list, ices_rect_sub, wind_FIN, wind_SWE)
+)
+
+#check
+ices_all_share %>%
+  group_by(Year) %>%
+  summarise(sum = sum(ShareWind, na.rm = TRUE))
+
+#MAKE WIDE
+ices_wide_share <- ices_all_share %>%
+  pivot_wider(
+    names_from = Year,
+    values_from = ShareWind
+  ) %>%
+  rowwise() %>%
+  mutate(
+    MeanShare = mean(c_across(`2016`:`2025`), na.rm = TRUE),
+    SDShare   = sd(c_across(`2016`:`2025`), na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+## add geometry
+
+ices_final_share <- ices_rect_sub
+
+for (col in colnames(ices_wide_share)[-1]) {
+  ices_final_share[[col]] <-
+    ices_wide_share[[col]][
+      match(ices_final_share$ICESNAME, ices_wide_share$ICESNAME)
+    ]
+}
+
+p1= plot_ices_map(ices_final_share,
+  "MeanShare",
+  "Average share of wind-affected fishing (2016–2025)"
+)
+
+p2 = plot_ices_map(ices_final_share,
+  "SDShare",
+  "SD of share of wind-affected fishing (2016–2025)"
+)
+
+p1 + p2
+
+# scale_fill_viridis_c(
+#   option = "plasma",
+#   limits = c(0, max(ices_final_share_sub$MeanShare, na.rm = TRUE)),
+#   labels = scales::label_number(accuracy = 0.1),
+#   name = "Share of impacted fishing (%)"
+# )
+
+
+## calculate different scenarios
+
