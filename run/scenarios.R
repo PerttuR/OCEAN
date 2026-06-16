@@ -48,33 +48,35 @@ run_scenarios <- function(S, n_sim = 50) {
       hitsC <- S$cable_hits[[Year]]
 
       hours <- csq$FishingHours
-      cable_flag <- lengths(hitsC) > 0
 
       sims <- replicate(n_sim, {
 
-        # select wind indices
-        if (method == "count") {
-          wind_keep <- sample(seq_len(n_wind),
-                              max(1, round(n_wind * share)))
-        } else {
-          target <- sum(wind_area) * share
-          perm <- sample(seq_along(wind_area))
-          keep <- perm[cumsum(wind_area[perm]) <= target]
+  # select wind indices
+  if (method == "count") {
+    wind_keep <- sample(seq_len(n_wind),
+                        max(1, round(n_wind * share)))
+  } else {
+    target <- sum(wind_area) * share
+    perm <- sample(seq_along(wind_area))
+    keep <- perm[cumsum(wind_area[perm]) <= target]
 
-          if (length(keep) == 0) {
-            keep <- perm[which.min(abs(cumsum(wind_area[perm]) - target))]
-          }
+    if (length(keep) == 0) {
+      keep <- perm[which.min(abs(cumsum(wind_area[perm]) - target))]
+    }
 
-          wind_keep <- keep
-        }
+    wind_keep <- keep
+  }
 
-        # VECTORISED FLAG
-        wind_flag <- lengths(hitsW) > 0 &
-          sapply(hitsW, function(x) any(x %in% wind_keep))
+  # WIND FLAG 
+  wind_flag <- lengths(hitsW) > 0 &
+    sapply(hitsW, function(x) any(x %in% wind_keep))
 
-        compute_overlap_fast(hours, wind_flag, cable_flag)
+  # CABLE FLAG LINKED TO WIND
+  cable_flag <- sapply(hitsC, function(x) any(x %in% wind_keep))
 
-      })
+  compute_overlap_fast(hours, wind_flag, cable_flag)
+
+})
 
       data.frame(
         Year = Year,
