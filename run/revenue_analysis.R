@@ -20,7 +20,7 @@ build_revenue_ices <- function(S, dataPath) {
   revenue_sum <- revenue %>%
     group_by(ICES_Rect, Year) %>%
     summarise(
-      value = sum(jalostusarvo_tv, na.rm = TRUE),
+      value = sum(liikevaihto_r, na.rm = TRUE),
       .groups = "drop"
     )
 

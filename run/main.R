@@ -135,11 +135,20 @@ export_ices(rect_total, rect_wind, outPath)
 # 6. PLOTS
 # =========================
 
-plot_total(scenario_results)
-plot_components(scenario_results)
+plot_method_comparison(scenario_results)
+
+plot_total(scenario_results, method = "count") #method is area or count
+plot_components(scenario_results, method = "count") #method is area or count
+
+#some scenarios
+plot_count_scenarios(scenario_results)
+
 
 # Fishing map
 csq_year <- S$sf_list[["2023"]]
+
+# plot the wind areas with numbers
+plot_wind_id_map(S$wind, S$coast)
 
 #with cables
 plot_fishing_with_wind(csq_year, S$wind, S$cable_full, S$coast)

@@ -35,6 +35,18 @@ prepare_spatial <- function(D) {
     ) %>%
     sf::st_make_valid()
 
+
+  ## add numbers
+  S$wind <- S$wind %>%
+  dplyr::mutate(wind_id = dplyr::row_number())
+  
+  wind_labels <- S$wind %>%
+  st_transform(3067) %>%     # safer for centroid
+  st_centroid() %>%
+  st_transform(4326)
+
+
+
   # =========================
   # Build csquares
   # =========================

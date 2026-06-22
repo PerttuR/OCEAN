@@ -1,4 +1,4 @@
-build_cable_buffer <- function(wind, coast_lines, width = 3000) {
+build_cable_buffer <- function(wind, coast_lines, width = 1500) {
 
   # ensure CRS
   wind <- st_transform(wind, 4326)
@@ -40,7 +40,7 @@ build_cable_buffer <- function(wind, coast_lines, width = 3000) {
 
   # buffer
   cable_lines %>%
-    st_transform(3035) %>%
+    st_transform(3067) %>% #(OR 3035 - LAEA EUROPE) USE THIS EVERYWHERE TM35FIN
     st_buffer(width) %>%
     st_transform(4326)
 }

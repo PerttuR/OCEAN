@@ -58,12 +58,12 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
       name = "Fishing hours"
     )
 
-  # ✅ CABLE (optional, added properly)
+  # CABLE (optional, added properly)
   if (!is.null(cable)) {
     p <- p + geom_sf(
       data = cable,
-      fill = NA,
-      colour = "orange",
+      fill = "orange",
+      colour = NA,
       linewidth = 0.8,
       alpha = 0.6
     )
@@ -182,4 +182,60 @@ plot_ices_wind <- function(ices_sf, baltic, ices_area = NULL) {
       title = "Average share of fishing in wind areas",
       fill = "%"
     )
+}
+
+
+## just to plot wind ids
+
+plot_wind_id_map <- function(wind, baltic, outPath = "out") {
+
+  # label positions
+  wind_labels <- wind %>%
+    st_transform(3067) %>%
+    st_centroid() %>%
+    st_transform(4326)
+
+  p <- ggplot() +
+
+    # land
+    plot_base_layers(baltic) +
+
+    # wind polygons
+    geom_sf(
+      data = wind,
+      fill = NA,
+      colour = "blue",
+      linewidth = 0.8
+    ) +
+
+    # labels (IDs)
+    geom_sf_text(
+      data = wind_labels,
+      aes(label = id),
+      size = 3,
+      colour = "black"
+    ) +
+
+    coord_sf(
+      xlim = c(17, 26),
+      ylim = c(60, 66),
+      expand = FALSE
+    ) +
+
+    base_map() +
+    add_map_decorations() +
+
+    labs(
+      title = "Wind areas with IDs",
+      subtitle = "Each polygon labelled by ID"
+    )
+
+  print(p)
+
+  ggsave(
+    file.path(outPath, "wind_id_map.png"),
+    plot = p,
+    width = 8,
+    height = 8
+  )
 }
