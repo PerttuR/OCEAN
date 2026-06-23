@@ -3,6 +3,7 @@
 # =========================
 # LIBRARIES
 # =========================
+print(Sys.time())
 
 library(sf)
 library(dplyr)
@@ -18,15 +19,20 @@ library(patchwork)
 # SETTINGS
 # =========================
 
-
-sf::sf_use_s2(FALSE) ### switches to GEOS engine - more tolerant to imperfect geometries
+sf::sf_use_s2(FALSE)
 
 options(sf_use_s2 = FALSE)
-options(warn = -1)   # suppress warnings "I’m treating lon/lat coordinates as flat (planar)"
+options(warn = -1)
+
 dataPath <- "orig"
 outPath  <- "out"
 
-USE_CACHE <- FALSE #TRUE OR FALSE (TRUE TO SAVE TIME)
+USE_CACHE <- FALSE
+
+# Counterfactual configuration
+without_areas <- c(55)   # use c() so this can be extended later
+# without_areas <- c(55, 61, 72)
+# without_areas <- integer(0)  # means "no exclusions"
 
 # =========================
 # LOAD MODULES
@@ -49,6 +55,8 @@ source("run/map_style.R")
 source("run/subdivision_scenarios.R")
 source("run/qa_checks.R")
 
+
+
 # =========================
 # 1. DATA + SPATIAL (cached)
 # =========================
@@ -56,20 +64,33 @@ source("run/qa_checks.R")
 if (USE_CACHE && file.exists(file.path(outPath, "spatial_data.rds"))) {
 
   message("Loading spatial data from cache")
-  S <- readRDS(file.path(outPath, "spatial_data.rds"))
+  S_all <- readRDS(file.path(outPath, "spatial_data.rds"))
 
 } else {
 
   message("Running full data + spatial pipeline")
 
   D <- prepare_data(dataPath)
-
   D$table1 <- add_ices_enrichment(D$table1, dataPath)
 
-  S <- prepare_spatial(D)
+  S_all <- prepare_spatial(D)
 
-  saveRDS(S, file = file.path(outPath, "spatial_data.rds"))
+  saveRDS(S_all, file = file.path(outPath, "spatial_data.rds"))
 }
+
+# -------------------------
+# Build counterfactual S
+# -------------------------
+
+S <- S_all
+
+if (length(without_areas) > 0) {
+  message("Dropping wind areas: ", paste(without_areas, collapse = ", "))
+  for (wid in without_areas) {
+    S <- drop_wind_id(S, wind_id_drop = wid)
+  }
+}
+
 
 # =========================
 # 2. REVENUE
@@ -84,29 +105,62 @@ ices_revenue <- build_revenue_ices(S, dataPath)
 baseline <- compute_baseline(S, year = "2019")
 
 print(baseline)
+print(Sys.time())
+
 
 # =========================
 # 4. SCENARIOS (cached)
 # =========================
 
-if (USE_CACHE && file.exists(file.path(outPath, "scenario_results.rds"))) {
+# ---------- ALL wind areas ----------
 
-  message("Loading scenarios from cache")
-  scenario_results <- readRDS(file.path(outPath, "scenario_results.rds"))
+scenario_file_all <- file.path(outPath, "scenario_results_all.rds")
+
+if (USE_CACHE && file.exists(scenario_file_all)) {
+
+  message("Loading scenarios (all wind areas)")
+  scenario_results_all <- readRDS(scenario_file_all)
 
 } else {
 
-  message("Running scenarios")
+  message("Running scenarios (all wind areas)")
+  scenario_results_all <- run_scenarios(S_all)
 
+  saveRDS(scenario_results_all, scenario_file_all)
+}
+
+# ---------- WITHOUT selected areas ----------
+
+suffix <- if (length(without_areas) == 0) {
+  "none"
+} else {
+  paste(without_areas, collapse = "_")
+}
+
+scenario_file_drop <- file.path(
+  outPath,
+  paste0("scenario_results_without_", suffix, ".rds")
+)
+
+if (USE_CACHE && file.exists(scenario_file_drop)) {
+
+  message("Loading scenarios (without areas: ", suffix, ")")
+  scenario_results <- readRDS(scenario_file_drop)
+
+} else {
+
+  message("Running scenarios (without areas: ", suffix, ")")
   scenario_results <- run_scenarios(S)
 
-  saveRDS(scenario_results, file.path(outPath, "scenario_results.rds"))
+  saveRDS(scenario_results, scenario_file_drop)
 }
 
 # CSV export
 export_scenarios(scenario_results, outPath)
 
 print("moving on to subdiv scenarios")
+print(Sys.time())
+
 # =========================
 # 4B. SUBDIVISION SCENARIOS (cached optional)
 # =========================
@@ -137,14 +191,18 @@ export_ices(rect_total, rect_wind, outPath)
 # 6. PLOTS
 # =========================
 
-plot_method_comparison(scenario_results)
-
-plot_total(scenario_results, method = "count") #method is area or count
-plot_components(scenario_results, method = "count") #method is area or count
+#remove
+# plot_method_comparison(scenario_results)
+# plot_total(scenario_results, method = "count") #method is area or count
+# plot_components(scenario_results, method = "count") #method is area or count
+# plot_count_scenarios(scenario_results)
 
 #some scenarios
-plot_count_scenarios(scenario_results)
-
+plot_total_marginal(scenario_results_all)
+plot_components_count_marginal(scenario_results_all)
+## OR with data where areas are dropped
+plot_total_marginal(scenario_results)
+plot_components_count_marginal(scenario_results)
 
 # Fishing map
 csq_year <- S$sf_list[["2023"]]
@@ -206,6 +264,57 @@ run_all_checks(
 # =========================
 
 message("All complete")
+print(Sys.time())
+
+
+
+# =========================
+# Adding special scenarios
+# =========================
+message("adding special cases (full system)")
+
+year <- "2023"
+wind_id_target <- 55
+
+csq   <- S_all$sf_list[[year]]
+hitsW <- S_all$wind_hits[[year]]
+hitsC <- S_all$cable_hits[[year]]
+
+total_hours <- sum(csq$FishingHours, na.rm = TRUE)
+
+wind_flag_55 <- vapply(hitsW, function(x) wind_id_target %in% x, logical(1))
+wind_hours_55 <- sum(csq$FishingHours[wind_flag_55], na.rm = TRUE)
+perc_wind_55 <- 100 * wind_hours_55 / total_hours
+
+cable_flag_55 <- vapply(hitsC, function(x) wind_id_target %in% x, logical(1)) &
+                 !wind_flag_55
+cable_hours_55 <- sum(csq$FishingHours[cable_flag_55], na.rm = TRUE)
+perc_cable_55 <- 100 * cable_hours_55 / total_hours
+
+perc_wind_55
+perc_cable_55
+
+## PLOTTING
+
+plot_total_with_without_wind_id(
+  res_all  = scenario_results_all,
+  res_drop = scenario_results,
+  wind_id  = paste(without_areas, collapse = ", ")
+)
+
+
+##remove
+
+cables_FIN <- S$cable_full %>%
+  dplyr::filter(country == "Finland")
+
+ggplot() +
+  geom_sf(data = S$coast, fill = "grey80") +
+  geom_sf(data = S$wind %>% filter(country == "Finland"),
+          fill = NA, colour = "blue") +
+  geom_sf(data = cables_FIN, fill = "orange", alpha = 0.6) +
+  coord_sf(xlim = c(17, 26), ylim = c(60, 66)) +
+  theme_minimal()
 
 ----- run/data_prepare.R -----
 prepare_data <- function(dataPath) {
@@ -257,12 +366,26 @@ prepare_spatial <- function(D) {
     ) %>%
     sf::st_make_valid()
 
+  ## AFter only taking SWE and FIN, drop all below 60 degrees (whole area must be above this to be kept)
+
+      wind <- wind %>%
+    sf::st_transform(4326) %>%
+    dplyr::mutate(
+      ymin = purrr::map_dbl(
+        sf::st_geometry(.),
+        ~ sf::st_bbox(.x)["ymin"]
+      )
+    ) %>%
+    dplyr::filter(ymin >= 60) %>%
+    dplyr::select(-ymin)
+
 
   ## add numbers
-  S$wind <- S$wind %>%
+  wind <- wind %>%
   dplyr::mutate(wind_id = dplyr::row_number())
+
   
-  wind_labels <- S$wind %>%
+  wind_labels <- wind %>%
   st_transform(3067) %>%     # safer for centroid
   st_centroid() %>%
   st_transform(4326)
@@ -312,21 +435,33 @@ prepare_spatial <- function(D) {
   # Coast
   # =========================
 
-  coast <- rnaturalearth::ne_countries(
-    scale = "medium",
-    returnclass = "sf"
-  ) %>%
-    dplyr::filter(admin %in% c(
-      "Finland","Sweden","Norway","Russia","Denmark","Germany",
-      "Estonia","Latvia","Lithuania","Poland"
-    )) %>%
-    sf::st_transform(4326)
+  # --------------------------------------------------
+# Coast (countries)
+# --------------------------------------------------
 
-  coast_lines <- sf::st_boundary(coast) %>%
-    sf::st_cast("LINESTRING")
+coast <- rnaturalearth::ne_countries(
+  scale = "medium",
+  returnclass = "sf"
+) %>%
+  dplyr::filter(admin %in% c(
+    "Finland","Sweden","Norway","Russia","Denmark","Germany",
+    "Estonia","Latvia","Lithuania","Poland"
+  )) %>%
+  sf::st_transform(4326)
 
-  cable_full <- build_cable_buffer(wind, coast_lines)
+# Build boundaries AFTER filtering
+coast_lines <- sf::st_boundary(coast)
 
+# Swedish coastline ONLY 
+coast_lines_SWE <- coast %>%
+  dplyr::filter(admin == "Sweden") %>%
+  sf::st_boundary()
+
+cable_full <- build_cable_buffer(
+  wind,
+  coast_lines,
+  coast_lines_SWE
+)
   # =========================
   # Wind classification
   # =========================
@@ -386,7 +521,8 @@ prepare_spatial <- function(D) {
 cable_proj <- sf::st_transform(cable_full, 3067)
 
 cable_hits <- purrr::map(sf_list_proj, function(csq) {
-  sf::st_intersects(csq, cable_proj)
+  hits <- sf::st_intersects(csq, cable_proj)
+  lapply(hits, function(i) cable_proj$wind_id[i])
 })
 
   message("Precompute done")
@@ -405,6 +541,7 @@ list(
   cable_full = cable_full,
   coast = coast,
   coast_lines = coast_lines,
+  coast_lines_SWE = coast_lines_SWE,
   ices_rect = ices_rect,
   ices_area = ices_area
 )
@@ -418,51 +555,101 @@ add_wind_overlap <- function(csq_year, wind) {
 }
 
 ----- run/cable.R -----
-build_cable_buffer <- function(wind, coast_lines, width = 1500) {
+build_cable_buffer <- function(wind, coast_lines, coast_lines_SWE, width = 1500) {
 
-  # ensure CRS
-  wind <- st_transform(wind, 4326)
-  coast_lines <- st_transform(coast_lines, 4326)
+  # --------------------------------------------------
+  # 1. Finnish landing locations (https://www.fingrid.fi/globalassets/dokumentit/fi/kantaverkko/kantaverkon-kehittaminen/fingrid_merituuliesite_11.2024_fi_21.11.pdf)
+  # --------------------------------------------------
+  landing_sites <- tibble::tibble(
+    name = c("INKOO","RAISIO","ULVILA","NÄRPIÖ","VAASA","KOKKOLA","RAAHE"),
+    lon  = c(24.00, 22.17, 21.87, 21.23, 21.62, 23.13, 24.48),
+    lat  = c(60.04, 60.45, 61.43, 62.47, 63.10, 63.84, 64.69)
+  )
 
-  # centroids
-  wind_cent <- st_centroid(st_geometry(wind)) %>%
-    st_as_sf(crs = 4326)
+  landing_sf <- sf::st_as_sf(
+    landing_sites,
+    coords = c("lon","lat"),
+    crs = 4326
+  )
 
-  # nearest coastline
-  idx <- st_nearest_feature(wind_cent, coast_lines)
-  coast_near <- coast_lines[idx, ]
+  # --------------------------------------------------
+  # 2. Centroids (KEEP ATTRIBUTES)
+  # --------------------------------------------------
+  wind <- sf::st_transform(wind, 4326)
+  wind_cent <- sf::st_centroid(wind)
 
-  # build lines SAFELY
-  cable_lines <- purrr::map2(
-    st_geometry(wind_cent),
-    st_geometry(coast_near),
+  # --------------------------------------------------
+  # 3. Split by country (SAFE)
+  # --------------------------------------------------
+  cent_FIN <- wind_cent %>% dplyr::filter(country == "Finland")
+  cent_SWE <- wind_cent %>% dplyr::filter(country == "Sweden")
+
+  # --------------------------------------------------
+  # 4. Finnish cables → nearest landing site
+  # --------------------------------------------------
+  idx_FIN <- sf::st_nearest_feature(
+    sf::st_transform(cent_FIN, 3067),
+    sf::st_transform(landing_sf, 3067)
+  )
+
+  land_FIN <- landing_sf[idx_FIN, ]
+
+  cables_FIN <- purrr::map2(
+    cent_FIN$geometry,
+    land_FIN$geometry,
+    ~ sf::st_linestring(
+        rbind(
+          sf::st_coordinates(.x),
+          sf::st_coordinates(.y)
+        )
+      )
+  )
+
+  cable_FIN_sf <- sf::st_sf(
+    wind_id  = cent_FIN$wind_id,
+    country  = "Finland",
+    geometry = sf::st_sfc(cables_FIN, crs = 4326)
+  )
+
+  # --------------------------------------------------
+  # 5. Swedish cables → nearest coastline
+  # --------------------------------------------------
+
+cable_SWE_sf <- NULL
+
+if (nrow(cent_SWE) > 0) {
+
+  cent_SWE_p  <- sf::st_transform(cent_SWE, 3067)
+  coast_SWE_p <- sf::st_transform(coast_lines_SWE, 3067)
+
+  idx_SWE <- sf::st_nearest_feature(cent_SWE_p, coast_SWE_p)
+  coast_near <- coast_SWE_p[idx_SWE, ]
+
+  cables_SWE <- purrr::map2(
+    sf::st_geometry(cent_SWE_p),
+    sf::st_geometry(coast_near),
     function(p, c) {
-
-      # nearest point on coastline
-      nearest_pt <- suppressWarnings(st_nearest_points(p, c))
-
-      # extract first (wind) and second (coast) point
-      coords <- st_coordinates(nearest_pt)
-
-      # ensure exactly 2 points
-      if (nrow(coords) < 2) return(NULL)
-
-      st_linestring(coords[1:2, ])
+      pts <- sf::st_nearest_points(p, c)
+      coords <- sf::st_coordinates(pts)
+      sf::st_linestring(coords[1:2, ])
     }
   )
 
-  # remove NULLs
-  cable_lines <- cable_lines[!sapply(cable_lines, is.null)]
+  cable_SWE_sf <- sf::st_sf(
+    wind_id  = cent_SWE$wind_id,
+    country  = rep("Sweden", length(cables_SWE)),
+    geometry = sf::st_sfc(cables_SWE, crs = 3067)
+  ) %>%
+    sf::st_transform(4326)
+}
 
-  # build sf object
-  cable_lines <- st_sfc(cable_lines, crs = 4326) %>%
-    st_as_sf()
-
-  # buffer
-  cable_lines %>%
-    st_transform(3067) %>% #(OR 3035 - LAEA EUROPE) USE THIS EVERYWHERE TM35FIN
-    st_buffer(width) %>%
-    st_transform(4326)
+  # --------------------------------------------------
+  # 6. Combine + buffer
+  # --------------------------------------------------
+  dplyr::bind_rows(cable_FIN_sf, cable_SWE_sf) %>%
+    sf::st_transform(3067) %>%
+    sf::st_buffer(width) %>%
+    sf::st_transform(4326)
 }
 
 ----- run/impact.R -----
@@ -493,22 +680,25 @@ library(purrr)
 library(sf)
 
 # =========================
-# CORE ENGINE (VECTORISED)
+# CORE ENGINE
 # =========================
 
 compute_overlap_fast <- function(hours, wind_flag, cable_flag) {
 
   total_hours <- sum(hours)
 
+  if (total_hours == 0) {
+    return(c(wind = NA, cable = NA, total = NA))
+  }
+
   wind_hours  <- sum(hours * wind_flag)
   cable_hours <- sum(hours * cable_flag)
 
-  # combined (no double counting)
   combined_flag  <- wind_flag | cable_flag
   combined_hours <- sum(hours * combined_flag)
 
   c(
-    wind  = 100 * wind_hours     / total_hours,
+    wind  = 100 * wind_hours      / total_hours,
     cable = 100 * cable_hours    / total_hours,
     total = 100 * combined_hours / total_hours
   )
@@ -518,75 +708,125 @@ compute_overlap_fast <- function(hours, wind_flag, cable_flag) {
 # MAIN SCENARIOS
 # =========================
 
-run_scenarios <- function(S, n_sim = 50) {
+run_scenarios <- function(S, n_sim = 200) {
 
   years  <- names(S$sf_list)
   n_wind <- nrow(S$wind)
 
-  # precompute wind areas once (for area-based selection)
-  wind_area <- as.numeric(st_area(S$wind_proj))
+  wind_area <- as.numeric(sf::st_area(S$wind_proj))
 
-  # -------------------------
-  # SCENARIO GRID (CLEAN)
-  # -------------------------
+  dplyr::bind_rows(
 
-  param_grid <- bind_rows(
+    # =====================================================
+# COUNT SCENARIOS — NESTED / MARGINAL BUILD-OUT
+# WITH WIND + CABLE DECOMPOSITION
+# =====================================================
+purrr::map_dfr(years, function(Year) {
 
-    # COUNT-based scenarios (absolute number of wind areas)
-    expand.grid(
-      Year = years,
-      method = "count",
-      n_wind_select = c(5, 10, 20),
-      share = NA_real_,
-      stringsAsFactors = FALSE
-    ),
+  csq   <- S$sf_list[[Year]]
+  hitsW <- S$wind_hits[[Year]]
+  hitsC <- S$cable_hits[[Year]]
+  hours <- csq$FishingHours
 
-    # AREA-based scenarios (% of total wind area)
+  # ---- build CSQ × WIND matrix
+  wind_mat <- lapply(hitsW, function(x) {
+    v <- logical(n_wind)
+    v[x] <- TRUE
+    v
+  })
+  wind_mat <- do.call(rbind, wind_mat)
+
+  # ---- build CSQ × CABLE matrix (PER WIND FARM)
+  cable_mat <- lapply(hitsC, function(x) {
+    v <- logical(n_wind)
+    v[x] <- TRUE
+    v
+  })
+  cable_mat <- do.call(rbind, cable_mat)
+
+  sim_list <- replicate(n_sim, {
+
+    perm <- sample(seq_len(n_wind))
+
+    wind_cum  <- matrix(FALSE, nrow = nrow(wind_mat),  ncol = n_wind)
+    cable_cum <- matrix(FALSE, nrow = nrow(cable_mat), ncol = n_wind)
+
+    wind_cum[, 1]  <- wind_mat[,  perm[1]]
+    cable_cum[, 1] <- cable_mat[, perm[1]]
+
+    if (n_wind > 1) {
+      for (k in 2:n_wind) {
+        wind_cum[,  k] <- wind_cum[,  k - 1] | wind_mat[,  perm[k]]
+        cable_cum[, k] <- cable_cum[, k - 1] | cable_mat[, perm[k]]
+      }
+    }
+
+    sapply(seq_len(n_wind), function(k) {
+
+      wind_flag  <- wind_cum[,  k]
+      cable_flag <- cable_cum[, k]
+
+      # enforce disjointness explicitly
+      cable_flag <- cable_flag & !wind_flag
+
+      total_hours <- sum(hours)
+
+      wind_hours  <- sum(hours * wind_flag)
+      cable_hours <- sum(hours * cable_flag)
+
+      c(
+        wind  = 100 * wind_hours  / total_hours,
+        cable = 100 * cable_hours / total_hours,
+        total = 100 * (wind_hours + cable_hours) / total_hours
+      )
+    })
+  }, simplify = FALSE)
+
+  sims <- array(
+    unlist(sim_list),
+    dim = c(3, n_wind, n_sim),
+    dimnames = list(c("wind", "cable", "total"), NULL, NULL)
+  )
+
+  data.frame(
+    Year = rep(Year, n_wind),
+    method = rep("count", n_wind),
+    n_wind_select = seq_len(n_wind),
+    share = NA_real_,
+
+    median_wind  = apply(sims["wind",  , ], 1, median, na.rm = TRUE),
+    median_cable = apply(sims["cable", , ], 1, median, na.rm = TRUE),
+    median_total = apply(sims["total", , ], 1, median, na.rm = TRUE),
+
+    min_total = apply(sims["total", , ], 1, min, na.rm = TRUE),
+    max_total = apply(sims["total", , ], 1, max, na.rm = TRUE)
+  )
+})
+  ,
+
+    # =====================================================
+    # AREA SCENARIOS — UNCHANGED
+    # =====================================================
+
     expand.grid(
       Year = years,
       method = "area",
       share = c(0.25, 0.5, 0.75, 1),
       n_wind_select = NA_integer_,
       stringsAsFactors = FALSE
-    )
-  )
+    ) %>%
+      purrr::pmap_dfr(function(Year, method, share, n_wind_select) {
 
-  # -------------------------
-  # RUN SCENARIOS
-  # -------------------------
+        csq   <- S$sf_list[[Year]]
+        hitsW <- S$wind_hits[[Year]]
+        hitsC <- S$cable_hits[[Year]]
+        hours <- csq$FishingHours
 
-  purrr::pmap_dfr(
-    param_grid,
-    function(Year, method, share, n_wind_select) {
-
-      csq   <- S$sf_list[[Year]]
-      hitsW <- S$wind_hits[[Year]]
-      hitsC <- S$cable_hits[[Year]]
-
-      hours <- csq$FishingHours
-
-      sims <- replicate(n_sim, {
-
-        # -------------------------
-        # WIND SELECTION
-        # -------------------------
-
-        if (method == "count") {
-
-          n_sel <- min(n_wind_select, n_wind)
-
-          wind_keep <- sample(
-            seq_len(n_wind),
-            n_sel
-          )
-        }
-
-        if (method == "area") {
+        sims <- replicate(n_sim, {
 
           target <- sum(wind_area) * share
           perm   <- sample(seq_along(wind_area))
-
-          keep <- perm[cumsum(wind_area[perm]) <= target]
+          keep   <- perm[cumsum(wind_area[perm]) <= target]
 
           if (length(keep) == 0) {
             keep <- perm[
@@ -594,194 +834,124 @@ run_scenarios <- function(S, n_sim = 50) {
             ]
           }
 
-          wind_keep <- keep
-        }
+          wind_flag <- vapply(
+            hitsW,
+            function(x) any(x %in% keep),
+            logical(1)
+          )
 
-        # -------------------------
-        # FLAGS
-        # -------------------------
+          cable_flag <- lengths(hitsC) > 0 &
+            vapply(seq_along(hitsC), function(i) {
+              any(hitsW[[i]] %in% keep)
+            }, logical(1))
 
-        wind_flag <- lengths(hitsW) > 0 &
-          sapply(hitsW, function(x) any(x %in% wind_keep))
+          compute_overlap_fast(hours, wind_flag, cable_flag)
+        })
 
-        # cable linked to selected wind (OPTION 1)
-        cable_flag <- sapply(hitsC, function(x) any(x %in% wind_keep))
-
-        compute_overlap_fast(hours, wind_flag, cable_flag)
-
+        data.frame(
+          Year = Year,
+          method = "area",
+          share = share,
+          n_wind_select = NA_integer_,
+          mean_wind  = mean(sims["wind", ], na.rm = TRUE),
+          mean_cable = mean(sims["cable", ], na.rm = TRUE),
+          mean_total = mean(sims["total", ], na.rm = TRUE),
+          min_total  = min(sims["total", ], na.rm = TRUE),
+          median_total = NA_real_,
+          max_total  = max(sims["total", ], na.rm = TRUE)
+        )
       })
-
-      # -------------------------
-      # OUTPUT
-      # -------------------------
-
-      data.frame(
-        Year = Year,
-        method = method,
-        share = share,
-        n_wind_select = n_wind_select,
-        mean_wind  = mean(sims["wind", ]),
-        mean_cable = mean(sims["cable", ]),
-        mean_total = mean(sims["total", ]),
-        min_total  = min(sims["total", ]),
-        max_total  = max(sims["total", ])
-      )
-    }
   )
 }
 
 ----- run/plot.R -----
-plot_total <- function(res, outPath = "out", method = NULL) {
 
-  # filter if method specified
-  if (!is.null(method)) {
-    res <- res %>% dplyr::filter(method == method)
-  }
 
-  p <- ggplot(res,
-              aes(x = share, y = mean_total)) +
+# ============================================================
+# TOTAL IMPACT — MARGINAL BUILD-OUT (COUNT)
+# ============================================================
 
-    geom_line(linewidth = 1, colour = "black") +
+plot_total_marginal <- function(res, outPath = "out") {
 
+  df <- res %>% filter(method == "count")
+
+  p <- ggplot(
+    df,
+    aes(x = n_wind_select, y = median_total)
+  ) +
     geom_ribbon(
       aes(ymin = min_total, ymax = max_total),
       fill = "grey70",
-      alpha = 0.3
+      alpha = 0.4
     ) +
-
+    geom_line(linewidth = 1, colour = "black") +
     facet_wrap(~Year) +
-
     theme_minimal() +
-
     labs(
-      x = "Wind development",
+      x = "Number of wind areas",
       y = "% fishing affected",
-      title = paste("Total impact (wind + cable)",
-                    if (!is.null(method)) paste("-", method))
+      title = "Total impact of wind + cable",
+      subtitle = "Median with min–max range across build-out orders"
     )
 
   print(p)
 
   ggsave(
-    file.path(outPath,
-              paste0("scenario_total_", ifelse(is.null(method), "all", method), ".png")),
+    file.path(outPath, "scenario_total_marginal.png"),
     plot = p,
     width = 10,
     height = 8
   )
 }
 
-plot_components <- function(res, outPath = "out", method = NULL) {
+# ============================================================
+# WIND VS CABLE VS TOTAL — MARGINAL COUNT SCENARIOS
+# ============================================================
 
-  if (!is.null(method)) {
-    res <- res %>% dplyr::filter(method == method)
-  }
+plot_components_count_marginal <- function(res, outPath = "out") {
 
   df <- res %>%
-    tidyr::pivot_longer(
-      cols = c(mean_wind, mean_cable, mean_total),
+    filter(method == "count") %>%
+    select(
+      Year,
+      n_wind_select,
+      median_wind,
+      median_cable,
+      median_total
+    ) %>%
+    pivot_longer(
+      cols = c(median_wind, median_cable, median_total),
       names_to = "component",
       values_to = "value"
+    ) %>%
+    mutate(
+      component = recode(
+        component,
+        median_wind  = "Wind",
+        median_cable = "Cable",
+        median_total = "Total"
+      )
     )
 
-  p <- ggplot(df,
-              aes(x = share, y = value, colour = component)) +
-
+  p <- ggplot(
+    df,
+    aes(x = n_wind_select, y = value, colour = component)
+  ) +
     geom_line(linewidth = 1) +
-
     facet_wrap(~Year) +
-
     theme_minimal() +
-
     labs(
-      x = "Wind development",
+      x = "Number of wind areas",
       y = "% fishing affected",
-      title = paste("Wind vs Cable vs Total",
-                    if (!is.null(method)) paste("-", method)),
+      title = "Wind, cable and total impact",
+      subtitle = "Median marginal impact by number of wind areas",
       colour = "Component"
     )
 
   print(p)
 
   ggsave(
-    file.path(outPath,
-              paste0("scenario_components_", ifelse(is.null(method), "all", method), ".png")),
-    plot = p,
-    width = 10,
-    height = 8
-  )
-}
-
-
-plot_method_comparison <- function(res, outPath = "out") {
-
-  df <- res %>%
-    tidyr::pivot_longer(
-      cols = c(mean_wind, mean_cable, mean_total),
-      names_to = "component",
-      values_to = "value"
-    )
-
-  p <- ggplot(df,
-              aes(x = share,
-                  y = value,
-                  colour = method,
-                  linetype = component)) +
-
-    geom_line(linewidth = 1) +
-    
-    scale_linetype_manual(
-      values = c(
-        mean_total = "solid",
-        mean_wind  = "dashed",
-        mean_cable = "dotted"
-      )
-    ) +
-
-    facet_wrap(~Year) +
-
-    theme_minimal() +
-
-    labs(
-      x = "Wind development",
-      y = "% fishing affected",
-      title = "Scenario comparison: count vs area",
-      colour = "Method",
-      linetype = "Component"
-    )
-
-  print(p)
-
-  ggsave(
-    file.path(outPath, "scenario_method_comparison.png"),
-    plot = p,
-    width = 10,
-    height = 8
-  )
-}
-
-#comparing scenarios
-
-plot_count_scenarios <- function(res, outPath = "out") {
-
-  df <- res %>%
-    dplyr::filter(method == "count")
-
-  p <- ggplot(df,
-              aes(x = n_wind_select, y = mean_total)) +
-    geom_line(linewidth = 1) +
-    facet_wrap(~Year) +
-    theme_minimal() +
-    labs(
-      x = "Number of wind farms",
-      y = "% fishing affected",
-      title = "Scenario results (count-based wind development)"
-    )
-
-  print(p)
-
-  ggsave(
-    file.path(outPath, "scenario_count.png"),
+    file.path(outPath, "scenario_components_count_marginal.png"),
     plot = p,
     width = 10,
     height = 8
@@ -1002,7 +1172,7 @@ plot_wind_id_map <- function(wind, baltic, outPath = "out") {
     # labels (IDs)
     geom_sf_text(
       data = wind_labels,
-      aes(label = id),
+      aes(label = wind_id), ## OR just id??
       size = 3,
       colour = "black"
     ) +
@@ -1448,18 +1618,30 @@ plot_base_layers <- function(baltic, ices_area = NULL) {
 }
 
 ----- run/subdivision_scenarios.R -----
+library(sf)
+library(dplyr)
+library(purrr)
+library(ggplot2)
 
+# ============================================================
+# SUBDIVISION SCENARIOS
+# Option A:
+#   - wind_flag  : csq intersects SELECTED wind farms
+#   - cable_flag : csq intersects cables belonging to
+#                  SELECTED wind farms
+# ============================================================
 
 run_subdivision_scenarios <- function(S, n_sim = 50) {
 
-  years <- names(S$sf_list)
+  years  <- names(S$sf_list)
   n_wind <- nrow(S$wind)
 
+  # wind areas (for area-based selection)
   wind_area <- as.numeric(sf::st_area(S$wind_proj))
 
   expand.grid(
-    Year = years,
-    share = c(1, 0.75, 0.5, 0.25),
+    Year   = years,
+    share  = c(1, 0.75, 0.5, 0.25),
     method = c("count", "area"),
     subdiv = c(30, 31),
     stringsAsFactors = FALSE
@@ -1470,69 +1652,121 @@ run_subdivision_scenarios <- function(S, n_sim = 50) {
       hitsW <- S$wind_hits[[Year]]
       hitsC <- S$cable_hits[[Year]]
 
+      # subset by subdivision
       idx <- which(csq$SubDivisio == subdiv)
 
       if (length(idx) == 0) {
         return(data.frame(
-          Year = Year, share = share, method = method,
+          Year = Year,
+          share = share,
+          method = method,
           subdiv = subdiv,
-          mean = NA, min = NA, max = NA
+          mean = NA,
+          min  = NA,
+          max  = NA
         ))
       }
 
-      hours <- csq$FishingHours[idx]
+      hours     <- csq$FishingHours[idx]
       hitsW_sub <- hitsW[idx]
       hitsC_sub <- hitsC[idx]
 
-      cable_flag <- lengths(hitsC_sub) > 0
-
       sims <- replicate(n_sim, {
 
+        # ----------------------------------
+        # SELECT WIND FARMS
+        # ----------------------------------
         if (method == "count") {
-          wind_keep <- sample(seq_len(n_wind),
-                              max(1, round(n_wind * share)))
+
+          wind_keep <- sample(
+            seq_len(n_wind),
+            max(1, round(n_wind * share))
+          )
+
         } else {
+
           target <- sum(wind_area) * share
-          perm <- sample(seq_along(wind_area))
-          keep <- perm[cumsum(wind_area[perm]) <= target]
+          perm   <- sample(seq_along(wind_area))
+          keep   <- perm[cumsum(wind_area[perm]) <= target]
 
           if (length(keep) == 0) {
-            keep <- perm[which.min(abs(cumsum(wind_area[perm]) - target))]
+            keep <- perm[
+              which.min(abs(cumsum(wind_area[perm]) - target))
+            ]
           }
 
           wind_keep <- keep
         }
 
-        wind_flag <- sapply(hitsW_sub, function(x) any(x %in% wind_keep))
+        # ----------------------------------
+        # FLAGS (OPTION A)
+        # ----------------------------------
+
+        # wind: csq intersects selected wind farms
+        wind_flag <- vapply(
+          hitsW_sub,
+          function(x) any(x %in% wind_keep),
+          logical(1)
+        )
+
+        # cable: csq intersects cable linked to selected wind
+        cable_flag <- lengths(hitsC_sub) > 0 &
+          vapply(seq_along(hitsC_sub), function(i) {
+            any(hitsW_sub[[i]] %in% wind_keep)
+          }, logical(1))
 
         res <- compute_overlap_fast(hours, wind_flag, cable_flag)
+
+        # subdivision analysis focuses on WIND component
         res["wind"]
       })
 
       data.frame(
-        Year = Year,
-        share = share,
+        Year   = Year,
+        share  = share,
         method = method,
         subdiv = subdiv,
-        mean = mean(sims),
-        min  = min(sims),
-        max  = max(sims)
+        mean   = mean(sims, na.rm = TRUE),
+        min    = min(sims, na.rm = TRUE),
+        max    = max(sims, na.rm = TRUE)
       )
     })
 }
 
+# ============================================================
+# PLOTTING
+# ============================================================
+
 plot_subdivision_scenarios <- function(df) {
 
-  ggplot(df,
-         aes(x = share, y = mean,
-             colour = factor(subdiv),
-             linetype = method)) +
-    geom_line() +
-    geom_ribbon(aes(ymin = min, ymax = max,
-                    fill = interaction(subdiv, method)),
-                alpha = 0.2) +
+  ggplot(
+    df,
+    aes(
+      x = share,
+      y = mean,
+      colour = factor(subdiv),
+      linetype = method
+    )
+  ) +
+    geom_line(linewidth = 1) +
+    geom_ribbon(
+      aes(
+        ymin = min,
+        ymax = max,
+        fill = interaction(subdiv, method)
+      ),
+      alpha = 0.2,
+      colour = NA
+    ) +
     facet_wrap(~Year) +
-    theme_minimal()
+    theme_minimal() +
+    labs(
+      x = "Wind development",
+      y = "% fishing affected",
+      colour = "ICES subdivision",
+      linetype = "Method",
+      title = "Subdivision scenarios (wind-linked cable impact)"
+    )
 }
 
 ----- run/qa_checks.R -----

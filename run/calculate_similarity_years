@@ -1,0 +1,171 @@
+years <- names(S$sf_list)
+
+fishing_long <- purrr::map_dfr(years, function(y) {
+  csq <- S$sf_list[[y]]
+
+  tibble(
+    Year = y,
+    csq_id = seq_len(nrow(csq)),
+    FishingHours = csq$FishingHours
+  )
+})
+
+
+fishing_long <- fishing_long %>%
+  group_by(Year) %>%
+  mutate(
+    perc = FishingHours / sum(FishingHours, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+perc_mat <- fishing_long %>%
+  select(csq_id, Year, perc) %>%
+  tidyr::pivot_wider(
+    names_from = Year,
+    values_from = perc,
+    values_fill = 0
+  ) %>%
+  arrange(csq_id)
+
+
+## correlation
+
+cor_perc <- cor(
+  perc_mat %>% select(-csq_id),
+  use = "pairwise.complete.obs"
+)
+
+cor_perc
+
+## cosine similarity
+
+cos_sim <- function(x, y) {
+  sum(x * y) / sqrt(sum(x^2) * sum(y^2))
+}
+
+ref_year <- "2019"
+
+cosine_vs_ref <- sapply(
+  setdiff(names(perc_mat), "csq_id"),
+  function(y) {
+    cos_sim(
+      perc_mat[[y]],
+      perc_mat[[ref_year]]
+    )
+  }
+)
+
+cosine_vs_ref
+
+
+#### OR AS ICES SQUARES
+
+years <- names(S$sf_list)
+
+rect_perc <- purrr::map_dfr(years, function(y) {
+
+  csq <- S$sf_list[[y]]
+
+  csq %>%
+    st_join(S$ices_rect["ICESNAME"]) %>%
+    st_drop_geometry() %>%
+    group_by(ICESNAME) %>%
+    summarise(
+      hours = sum(FishingHours, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      Year = y,
+      perc = hours / sum(hours)
+    )
+})
+
+rect_mat <- rect_perc %>%
+  select(ICESNAME, Year, perc) %>%
+  pivot_wider(names_from = Year, values_from = perc, values_fill = 0)
+
+cor(
+  rect_mat %>% select(-ICESNAME),
+  use = "pairwise.complete.obs"
+)
+
+
+### OR define neighbours with distance D. USING COSINE SIMILARITY
+
+library(sf)
+library(spdep)
+
+years <- names(S$sf_list)
+ref_year <- "2019"
+
+csq_geom <- S$sf_list[[years[1]]] %>%
+  st_centroid() %>%
+  st_transform(3067)
+
+coords <- st_coordinates(csq_geom)
+
+#cosine similarity
+cos_sim <- function(x, y) {
+  sum(x * y, na.rm = TRUE) /
+    sqrt(sum(x^2, na.rm = TRUE) * sum(y^2, na.rm = TRUE))
+}
+
+#Compute similarity for a given radius
+library(spdep)
+
+similarity_at_radius <- function(radius_m) {
+
+  nb <- spdep::dnearneigh(coords, 0, radius_m)
+
+  lw <- spdep::nb2listw(
+    nb,
+    style = "W",
+    zero.policy = TRUE
+  )
+
+  smooth_perc <- function(p) {
+    spdep::lag.listw(
+      lw,
+      p,
+      zero.policy = TRUE
+    )
+  }
+
+  sapply(years, function(y) {
+    cos_sim(
+      smooth_perc(perc_mat[[y]]),
+      smooth_perc(perc_mat[[ref_year]])
+    )
+  })
+}
+
+## evaluate multiple radii
+
+radii_km <- c(5, 10, 20, 30, 50, 75, 100)
+radii_m  <- radii_km * 1000
+
+sim_by_radius <- purrr::map_dfr(radii_m, function(r) {
+
+  sim <- similarity_at_radius(r)
+
+  tibble(
+    radius_km = r / 1000,
+    Year = names(sim),
+    cosine_similarity = as.numeric(sim)
+  )
+})
+
+### visualise
+
+ggplot(
+  sim_by_radius,
+  aes(x = radius_km, y = cosine_similarity, colour = Year)
+) +
+  geom_line() +
+  theme_minimal() +
+  labs(
+    x = "Neighborhood radius (km)",
+    y = "Cosine similarity vs 2019",
+    title = "Scale dependence of spatial fishing pattern stability"
+  )

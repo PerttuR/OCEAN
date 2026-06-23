@@ -35,12 +35,26 @@ prepare_spatial <- function(D) {
     ) %>%
     sf::st_make_valid()
 
+  ## AFter only taking SWE and FIN, drop all below 60 degrees (whole area must be above this to be kept)
+
+      wind <- wind %>%
+    sf::st_transform(4326) %>%
+    dplyr::mutate(
+      ymin = purrr::map_dbl(
+        sf::st_geometry(.),
+        ~ sf::st_bbox(.x)["ymin"]
+      )
+    ) %>%
+    dplyr::filter(ymin >= 60) %>%
+    dplyr::select(-ymin)
+
 
   ## add numbers
-  S$wind <- S$wind %>%
+  wind <- wind %>%
   dplyr::mutate(wind_id = dplyr::row_number())
+
   
-  wind_labels <- S$wind %>%
+  wind_labels <- wind %>%
   st_transform(3067) %>%     # safer for centroid
   st_centroid() %>%
   st_transform(4326)
@@ -90,21 +104,33 @@ prepare_spatial <- function(D) {
   # Coast
   # =========================
 
-  coast <- rnaturalearth::ne_countries(
-    scale = "medium",
-    returnclass = "sf"
-  ) %>%
-    dplyr::filter(admin %in% c(
-      "Finland","Sweden","Norway","Russia","Denmark","Germany",
-      "Estonia","Latvia","Lithuania","Poland"
-    )) %>%
-    sf::st_transform(4326)
+  # --------------------------------------------------
+# Coast (countries)
+# --------------------------------------------------
 
-  coast_lines <- sf::st_boundary(coast) %>%
-    sf::st_cast("LINESTRING")
+coast <- rnaturalearth::ne_countries(
+  scale = "medium",
+  returnclass = "sf"
+) %>%
+  dplyr::filter(admin %in% c(
+    "Finland","Sweden","Norway","Russia","Denmark","Germany",
+    "Estonia","Latvia","Lithuania","Poland"
+  )) %>%
+  sf::st_transform(4326)
 
-  cable_full <- build_cable_buffer(wind, coast_lines)
+# Build boundaries AFTER filtering
+coast_lines <- sf::st_boundary(coast)
 
+# Swedish coastline ONLY 
+coast_lines_SWE <- coast %>%
+  dplyr::filter(admin == "Sweden") %>%
+  sf::st_boundary()
+
+cable_full <- build_cable_buffer(
+  wind,
+  coast_lines,
+  coast_lines_SWE
+)
   # =========================
   # Wind classification
   # =========================
@@ -164,7 +190,8 @@ prepare_spatial <- function(D) {
 cable_proj <- sf::st_transform(cable_full, 3067)
 
 cable_hits <- purrr::map(sf_list_proj, function(csq) {
-  sf::st_intersects(csq, cable_proj)
+  hits <- sf::st_intersects(csq, cable_proj)
+  lapply(hits, function(i) cable_proj$wind_id[i])
 })
 
   message("Precompute done")
@@ -183,6 +210,7 @@ list(
   cable_full = cable_full,
   coast = coast,
   coast_lines = coast_lines,
+  coast_lines_SWE = coast_lines_SWE,
   ices_rect = ices_rect,
   ices_area = ices_area
 )

@@ -211,7 +211,7 @@ plot_wind_id_map <- function(wind, baltic, outPath = "out") {
     # labels (IDs)
     geom_sf_text(
       data = wind_labels,
-      aes(label = id),
+      aes(label = wind_id), ## OR just id??
       size = 3,
       colour = "black"
     ) +
