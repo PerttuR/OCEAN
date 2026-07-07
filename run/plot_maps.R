@@ -44,7 +44,6 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
 
   p <- ggplot() +
 
-    # DATA layer
     geom_sf(
       data = csq_year,
       aes(fill = FishingHours),
@@ -58,36 +57,39 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
       name = "Fishing hours"
     )
 
-  # CABLE (optional, added properly)
   if (!is.null(cable)) {
     p <- p + geom_sf(
       data = cable,
-      fill = "orange",
+      fill = "purple",
       colour = NA,
       linewidth = 0.8,
       alpha = 0.6
     )
   }
 
-  # ✅ WIND
-  p <- p + geom_sf(
-    data = wind,
-    aes(colour = country),
-    fill = NA,
-    linewidth = 0.5
-  )
-
-  # ✅ BASE LAYERS (LAND LAST!)
-  p <- p + plot_base_layers(baltic)
-
-  # ✅ FINAL SETTINGS
   p <- p +
+    geom_sf(
+      data = wind,
+      aes(colour = country, linetype=country),
+      fill = NA,
+      linewidth = 0.7
+    ) +
     scale_colour_manual(
       values = c(
-        "Finland" = "#1f78b4",
-        "Sweden"  = "#33a02c"
+        "Finland" = "purple",      # change as desired
+        "Sweden"  = "purple"        # change as desired
       )
     ) +
+    scale_linetype_manual(
+      values = c(
+        "Finland" = "solid",
+        "Sweden"  = "solid"
+      )
+    )
+#Add land
+  p <- p + plot_base_layers(baltic)
+#final settings
+  p <- p +
     coord_sf(
       xlim = c(17, 26),
       ylim = c(60, 66),
@@ -101,12 +103,11 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
       } else {
         "Fishing intensity, wind areas and cable routes"
       },
-      colour = "Wind country"
+      linetype = "Country of wind area"
     )
 
   return(p)
 }
-
 
 
 ## ICES squares impact

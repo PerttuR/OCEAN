@@ -52,7 +52,7 @@ plot_base_layers <- function(baltic, ices_area = NULL) {
     geom_sf(
       data = baltic,
       fill = "grey80",
-      colour = "black",
+      colour = "grey50",
       linewidth = 0.4
     )
   ))

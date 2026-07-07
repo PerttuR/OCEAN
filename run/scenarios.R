@@ -31,7 +31,7 @@ compute_overlap_fast <- function(hours, wind_flag, cable_flag) {
 # MAIN SCENARIOS
 # =========================
 
-run_scenarios <- function(S, n_sim = 200) {
+run_scenarios <- function(S, n_sim) {
 
   years  <- names(S$sf_list)
   n_wind <- nrow(S$wind)
@@ -165,7 +165,7 @@ purrr::map_dfr(years, function(Year) {
 
           cable_flag <- lengths(hitsC) > 0 &
             vapply(seq_along(hitsC), function(i) {
-              any(hitsW[[i]] %in% keep)
+              any(hitsC[[i]] %in% keep)
             }, logical(1))
 
           compute_overlap_fast(hours, wind_flag, cable_flag)

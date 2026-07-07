@@ -92,7 +92,7 @@ run_subdivision_scenarios <- function(S, n_sim = 50) {
         # cable: csq intersects cable linked to selected wind
         cable_flag <- lengths(hitsC_sub) > 0 &
           vapply(seq_along(hitsC_sub), function(i) {
-            any(hitsW_sub[[i]] %in% wind_keep)
+            any(hitsC_sub[[i]] %in% wind_keep)
           }, logical(1))
 
         res <- compute_overlap_fast(hours, wind_flag, cable_flag)

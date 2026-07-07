@@ -25,10 +25,15 @@ options(warn = -1)
 dataPath <- "orig"
 outPath  <- "out"
 
-USE_CACHE <- FALSE
+USE_CACHE <- TRUE #TRUE TO USE older runs
+
+
+set.seed(123)
+N_SIM_SCENARIOS <- 2000
+N_SIM_SUBDIV    <- 1000 #5000 for final
 
 # Counterfactual configuration
-without_areas <- c(55)   # use c() so this can be extended later
+without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NO
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
 
@@ -122,7 +127,7 @@ if (USE_CACHE && file.exists(scenario_file_all)) {
 } else {
 
   message("Running scenarios (all wind areas)")
-  scenario_results_all <- run_scenarios(S_all)
+  scenario_results_all <- run_scenarios(S_all, n_sim = N_SIM_SCENARIOS)
 
   saveRDS(scenario_results_all, scenario_file_all)
 }
@@ -148,7 +153,7 @@ if (USE_CACHE && file.exists(scenario_file_drop)) {
 } else {
 
   message("Running scenarios (without areas: ", suffix, ")")
-  scenario_results <- run_scenarios(S)
+  scenario_results <- run_scenarios(S, n_sim = N_SIM_SCENARIOS)
 
   saveRDS(scenario_results, scenario_file_drop)
 }
@@ -163,7 +168,7 @@ print(Sys.time())
 # 4B. SUBDIVISION SCENARIOS (cached optional)
 # =========================
 
-subdiv_results <- run_subdivision_scenarios(S)
+subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
 
 write.table(
   subdiv_results,
@@ -190,17 +195,6 @@ export_ices(rect_total, rect_wind, outPath)
 # =========================
 
 #remove
-# plot_method_comparison(scenario_results)
-# plot_total(scenario_results, method = "count") #method is area or count
-# plot_components(scenario_results, method = "count") #method is area or count
-# plot_count_scenarios(scenario_results)
-
-#some scenarios
-plot_total_marginal(scenario_results_all)
-plot_components_count_marginal(scenario_results_all)
-## OR with data where areas are dropped
-plot_total_marginal(scenario_results)
-plot_components_count_marginal(scenario_results)
 
 # Fishing map
 csq_year <- S$sf_list[["2023"]]
@@ -301,15 +295,69 @@ plot_total_with_without_wind_id(
 )
 
 
-##remove
 
-cables_FIN <- S$cable_full %>%
-  dplyr::filter(country == "Finland")
+#### summaries ####
 
-ggplot() +
-  geom_sf(data = S$coast, fill = "grey80") +
-  geom_sf(data = S$wind %>% filter(country == "Finland"),
-          fill = NA, colour = "blue") +
-  geom_sf(data = cables_FIN, fill = "orange", alpha = 0.6) +
-  coord_sf(xlim = c(17, 26), ylim = c(60, 66)) +
-  theme_minimal()
+plot_total_marginal_mean_years(scenario_results_all)
+plot_total_marginal_mean_years(scenario_results)
+
+#some scenarios
+plot_total_marginal(scenario_results_all)
+plot_components_count_marginal(scenario_results_all)
+
+## OR with data where areas are dropped
+plot_total_marginal(scenario_results)
+plot_components_count_marginal(scenario_results)
+
+
+#### Plot map of average fishing ####
+
+#2016 is different
+
+years_use <- c("2020", "2021", "2022", "2023", "2024", "2025")
+
+mean_csq_2020_2025 <- purrr::map_dfr(years_use, function(y) {
+
+  S$sf_list[[y]] %>%
+    dplyr::mutate(
+      Year = y,
+      geom_key = sf::st_as_text(sf::st_geometry(.))
+    ) %>%
+    sf::st_drop_geometry() %>%
+    dplyr::select(
+      Year,
+      geom_key,
+      FishingHours,
+      TotValue,
+      TotWeight
+    )
+
+}) %>%
+  dplyr::group_by(geom_key) %>%
+  dplyr::summarise(
+    FishingHours = sum(FishingHours, na.rm = TRUE) / length(years_use),
+    TotValue     = sum(TotValue, na.rm = TRUE) / length(years_use),
+    TotWeight    = sum(TotWeight, na.rm = TRUE) / length(years_use),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    geometry = sf::st_as_sfc(geom_key, crs = 4326)
+  ) %>%
+  sf::st_as_sf() %>%
+  dplyr::select(-geom_key)
+
+
+plot_fishing_with_wind(
+  mean_csq_2020_2025,
+  S_all$wind,
+  S$cable_full,
+  S$coast
+)
+
+
+source("run/calculate_similarity_years")
+
+
+### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
+
+plot_wind_cable_overlap_bars(wind_overlap_mean)

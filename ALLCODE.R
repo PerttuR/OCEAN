@@ -29,6 +29,11 @@ outPath  <- "out"
 
 USE_CACHE <- FALSE
 
+
+set.seed(123)
+N_SIM_SCENARIOS <- 2000
+N_SIM_SUBDIV    <- 1000 #5000 for final
+
 # Counterfactual configuration
 without_areas <- c(55)   # use c() so this can be extended later
 # without_areas <- c(55, 61, 72)
@@ -124,7 +129,7 @@ if (USE_CACHE && file.exists(scenario_file_all)) {
 } else {
 
   message("Running scenarios (all wind areas)")
-  scenario_results_all <- run_scenarios(S_all)
+  scenario_results_all <- run_scenarios(S_all, n_sim = N_SIM_SCENARIOS)
 
   saveRDS(scenario_results_all, scenario_file_all)
 }
@@ -150,7 +155,7 @@ if (USE_CACHE && file.exists(scenario_file_drop)) {
 } else {
 
   message("Running scenarios (without areas: ", suffix, ")")
-  scenario_results <- run_scenarios(S)
+  scenario_results <- run_scenarios(S, n_sim = N_SIM_SCENARIOS)
 
   saveRDS(scenario_results, scenario_file_drop)
 }
@@ -165,7 +170,7 @@ print(Sys.time())
 # 4B. SUBDIVISION SCENARIOS (cached optional)
 # =========================
 
-subdiv_results <- run_subdivision_scenarios(S)
+subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
 
 write.table(
   subdiv_results,
@@ -614,34 +619,45 @@ build_cable_buffer <- function(wind, coast_lines, coast_lines_SWE, width = 1500)
   # --------------------------------------------------
   # 5. Swedish cables → nearest coastline
   # --------------------------------------------------
-
 cable_SWE_sf <- NULL
 
 if (nrow(cent_SWE) > 0) {
 
   cent_SWE_p  <- sf::st_transform(cent_SWE, 3067)
-  coast_SWE_p <- sf::st_transform(coast_lines_SWE, 3067)
+  coast_SWE_p <- sf::st_transform(coast_lines_SWE, 3067) %>%
+    sf::st_cast("LINESTRING")
 
-  idx_SWE <- sf::st_nearest_feature(cent_SWE_p, coast_SWE_p)
-  coast_near <- coast_SWE_p[idx_SWE, ]
+  cables_SWE <- purrr::map(
+    seq_len(nrow(cent_SWE_p)),
+    function(i) {
 
-  cables_SWE <- purrr::map2(
-    sf::st_geometry(cent_SWE_p),
-    sf::st_geometry(coast_near),
-    function(p, c) {
-      pts <- sf::st_nearest_points(p, c)
-      coords <- sf::st_coordinates(pts)
-      sf::st_linestring(coords[1:2, ])
+      # keep as sf (CRS preserved)
+      p <- cent_SWE_p[i, , drop = FALSE]
+
+      # find nearest coastline segment
+      idx <- sf::st_nearest_feature(p, coast_SWE_p)
+
+      coast_seg <- coast_SWE_p[idx, , drop = FALSE]
+
+      # compute nearest points
+      nearest <- sf::st_nearest_points(p, coast_seg)
+
+      # extract coordinates safely
+      coords <- sf::st_coordinates(nearest)
+
+      #  build line (first two points only)
+      sf::st_linestring(coords[1:2, 1:2])
     }
   )
 
   cable_SWE_sf <- sf::st_sf(
     wind_id  = cent_SWE$wind_id,
-    country  = rep("Sweden", length(cables_SWE)),
+    country  = "Sweden",
     geometry = sf::st_sfc(cables_SWE, crs = 3067)
   ) %>%
     sf::st_transform(4326)
 }
+
 
   # --------------------------------------------------
   # 6. Combine + buffer
@@ -708,7 +724,7 @@ compute_overlap_fast <- function(hours, wind_flag, cable_flag) {
 # MAIN SCENARIOS
 # =========================
 
-run_scenarios <- function(S, n_sim = 200) {
+run_scenarios <- function(S, n_sim) {
 
   years  <- names(S$sf_list)
   n_wind <- nrow(S$wind)
@@ -842,7 +858,7 @@ purrr::map_dfr(years, function(Year) {
 
           cable_flag <- lengths(hitsC) > 0 &
             vapply(seq_along(hitsC), function(i) {
-              any(hitsW[[i]] %in% keep)
+              any(hitsC[[i]] %in% keep)
             }, logical(1))
 
           compute_overlap_fast(hours, wind_flag, cable_flag)
@@ -952,6 +968,62 @@ plot_components_count_marginal <- function(res, outPath = "out") {
 
   ggsave(
     file.path(outPath, "scenario_components_count_marginal.png"),
+    plot = p,
+    width = 10,
+    height = 8
+  )
+}
+
+##
+# ============================================================
+# TOTAL IMPACT — WITH VS WITHOUT A GIVEN WIND ID
+# ============================================================
+
+plot_total_with_without_wind_id <- function(
+  res_all,
+  res_drop,
+  wind_id,
+  outPath = "out"
+) {
+
+  df_all <- res_all %>%
+    filter(method == "count") %>%
+    select(Year, n_wind_select, median_total) %>%
+    mutate(case = "All wind areas")
+
+  df_drop <- res_drop %>%
+    filter(method == "count") %>%
+    select(Year, n_wind_select, median_total) %>%
+    mutate(case = paste0("Without wind ID ", wind_id))
+
+  df <- bind_rows(df_all, df_drop)
+
+  p <- ggplot(
+    df,
+    aes(
+      x = n_wind_select,
+      y = median_total,
+      colour = case
+    )
+  ) +
+    geom_line(linewidth = 1) +
+    facet_wrap(~Year) +
+    theme_minimal() +
+    labs(
+      x = "Number of wind areas",
+      y = "% fishing affected",
+      title = "Total fishing impact with and without a specific wind area",
+      subtitle = paste("Comparison excluding wind area ID", wind_id),
+      colour = "Scenario"
+    )
+
+  print(p)
+
+  ggsave(
+    file.path(
+      outPath,
+      paste0("scenario_total_with_without_wind_", wind_id, ".png")
+    ),
     plot = p,
     width = 10,
     height = 8
@@ -1204,6 +1276,36 @@ plot_wind_id_map <- function(wind, baltic, outPath = "out") {
 ----- run/spatial_utils.R -----
 fast_intersects_flag <- function(x, y) {
   lengths(st_intersects(x, y)) > 0
+}
+
+
+#helper function to drop areas
+
+drop_wind_id <- function(S, wind_id_drop) {
+
+  keep_idx <- which(S$wind$wind_id != wind_id_drop)
+
+  S2 <- S
+
+  # drop wind geometry
+  S2$wind      <- S$wind[keep_idx, ]
+  S2$wind_proj <- S$wind_proj[keep_idx, ]
+
+  # fix wind_hits (reindex!)
+  S2$wind_hits <- lapply(S$wind_hits, function(hits) {
+    lapply(hits, function(x) {
+      match(x[x %in% keep_idx], keep_idx)
+    })
+  })
+
+  # fix cable_hits (same indexing logic)
+  S2$cable_hits <- lapply(S$cable_hits, function(hits) {
+    lapply(hits, function(x) {
+      match(x[x %in% keep_idx], keep_idx)
+    })
+  })
+
+  return(S2)
 }
 
 ----- run/ices_enrichment.R -----
@@ -1712,7 +1814,7 @@ run_subdivision_scenarios <- function(S, n_sim = 50) {
         # cable: csq intersects cable linked to selected wind
         cable_flag <- lengths(hitsC_sub) > 0 &
           vapply(seq_along(hitsC_sub), function(i) {
-            any(hitsW_sub[[i]] %in% wind_keep)
+            any(hitsC_sub[[i]] %in% wind_keep)
           }, logical(1))
 
         res <- compute_overlap_fast(hours, wind_flag, cable_flag)
