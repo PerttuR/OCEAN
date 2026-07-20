@@ -15,8 +15,10 @@
 library(purrr)
 library(sf)
 library(dplyr)
-
-
+conflicted::conflict_prefer("select", "dplyr")
+conflicted::conflicts_prefer(lubridate::year)
+conflicted::conflicts_prefer(lubridate::month)
+conflicted::conflicts_prefer(operators::`%>%`)
 
 run.year = 2026
 
@@ -93,7 +95,7 @@ for(year in yearsToSubmit){
 
   # Define the columns to be included in the table
   cols <- c(
-    "VE_REF", "VE_COU", "Year", "Month", "LE_RECT", "LE_GEAR", "LE_MET",
+    "VE_REF", "VE_COU", "Year", "Month", "LE_RECT", "LE_GEAR", "LE_MSZ", "LE_MET",
     "VE_LEN", "tripInTacsat", "INTV", "kwDays", "LE_KG_TOT", "LE_EURO_TOT", cols_kg, cols_euro
   )
   
@@ -346,7 +348,7 @@ csq_ices <- st_join(
 
 csq_lut <- csq_ices %>%
   st_drop_geometry() %>%
-  select(Csquare, ICESrectangle = ICESNAME)
+  dplyr::select(Csquare, ICESrectangle = ICESNAME)
 
 table1 <- table1 %>%
   left_join(csq_lut, by = "Csquare")
@@ -372,7 +374,7 @@ csq_area_lut <- csq_area %>%
   slice(1) %>%
   ungroup() %>%
   st_drop_geometry() %>%
-  select(Csquare, ICESarea = SubDivisio)
+  dplyr::select(Csquare, ICESarea = SubDivisio)
 
 table1 <- table1 %>%
   left_join(csq_area_lut, by = "Csquare")
@@ -840,3 +842,21 @@ write.table(rect_vessel, paste0(outPath, "rect_wind_catch_Vessel.csv"), na = "",
 #'------------------------------------------------------------------------------
 # End of script                                                             
 #'------------------------------------------------------------------------------
+#' 
+#' 
+#' ### JH ADD FOR MESH SIZE
+#' 
+
+MeshSummary <- as.data.frame(
+  table(
+    LE_MSZ = table2$LE_MSZ,
+    LE_GEAR = table2$LE_GEAR,
+    Year = table2$Year,
+    useNA = "ifany"
+  )
+)
+
+MeshSummary <- MeshSummary |>
+  dplyr::filter(Freq > 0)
+
+MeshSummary

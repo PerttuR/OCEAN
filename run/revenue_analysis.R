@@ -1,17 +1,18 @@
 
-build_revenue_ices <- function(S, dataPath) {
+build_revenue_ices <- function(S, dataPath, years_use = 2020:2024) {
 
   # =========================
   # 1. Load data
   # =========================
 
-  revenue <- read_excel(
-    file.path(dataPath, "Allokoidut_tulokset_saaliinarvolla.xlsx"),
-    sheet = "Isot_troolarit"
+revenue <- read_excel(
+  file.path(dataPath, "Allokoidut_tulokset_saaliinarvolla.xlsx"),
+  sheet = "Isot_troolarit"
+) %>%
+  mutate(
+    Year = 2000 + vuosi
   ) %>%
-    mutate(
-      Year = 2000 + vuosi
-    )
+  filter(Year %in% years_use)
 
   # =========================
   # 2. Aggregate per ICES + year

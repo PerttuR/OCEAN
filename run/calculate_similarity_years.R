@@ -85,11 +85,12 @@ rect_mat <- rect_perc %>%
   select(ICESNAME, Year, perc) %>%
   pivot_wider(names_from = Year, values_from = perc, values_fill = 0)
 
-cor(
+Rect_cor = cor(
   rect_mat %>% select(-ICESNAME),
   use = "pairwise.complete.obs"
 )
 
+print(round(Rect_cor, 2))
 
 ### OR define neighbours with distance D. USING COSINE SIMILARITY
 

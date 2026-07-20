@@ -1,6 +1,8 @@
 plot_base_map <- function(data_sf, fill_var, title,
                           ices_area = NULL,
-                          baltic = NULL) {
+                          baltic = NULL,
+                        label_fun = waiver(),
+                      fill_title = " ") {
 
   ggplot() +
 
@@ -20,7 +22,8 @@ plot_base_map <- function(data_sf, fill_var, title,
     scale_fill_viridis_c(
       option = "cividis",
       direction = -1,
-      na.value = "grey90"
+      na.value = "grey90",
+      labels = label_fun
     ) +
 
     coord_sf(
@@ -33,7 +36,7 @@ plot_base_map <- function(data_sf, fill_var, title,
 
     add_map_decorations() +
 
-    labs(title = title, fill = "")
+    labs(title = title, fill = fill_title)
 }
 
 
@@ -112,11 +115,9 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
 
 ## ICES squares impact
 
-calc_ices_mean_sd <- function(sf_list, ices_rect, wind) {
+calc_ices_mean_sd <- function(sf_list, ices_rect, wind, years_use = names(sf_list)) {
 
-  years <- names(sf_list)
-
-  res <- purrr::map_dfr(years, function(y) {
+  res <- purrr::map_dfr(years_use, function(y) {
 
     csq <- sf_list[[y]]
 
@@ -239,4 +240,37 @@ plot_wind_id_map <- function(wind, baltic, outPath = "out") {
     width = 8,
     height = 8
   )
+}
+
+#### functin for fishing maps
+
+calc_ices_mean_hours <- function(
+    sf_list,
+    ices_rect,
+    years_use = names(sf_list)
+) {
+
+  res <- purrr::map_dfr(years_use, function(y) {
+
+    csq <- sf_list[[y]]
+
+    csq %>%
+      st_join(ices_rect["ICESNAME"]) %>%
+      st_drop_geometry() %>%
+      group_by(ICESNAME) %>%
+      summarise(
+        TotalHours = sum(FishingHours, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(Year = y)
+
+  })
+
+  res %>%
+    group_by(ICESNAME) %>%
+    summarise(
+      MeanHours = mean(TotalHours, na.rm = TRUE),
+      SDHours   = sd(TotalHours, na.rm = TRUE),
+      .groups = "drop"
+    )
 }

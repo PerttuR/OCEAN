@@ -1,5 +1,11 @@
 
 ----- run/main.R -----
+## IF YOU NEED TO CLEAN THE SESSION
+
+# rm(list = ls())
+# gc()
+
+
 # =========================
 # LIBRARIES
 # =========================
@@ -19,6 +25,9 @@ library(patchwork)
 # SETTINGS
 # =========================
 
+USE_CACHE <- FALSE #TRUE TO USE older runs
+
+
 sf::sf_use_s2(FALSE)
 
 options(sf_use_s2 = FALSE)
@@ -27,15 +36,14 @@ options(warn = -1)
 dataPath <- "orig"
 outPath  <- "out"
 
-USE_CACHE <- FALSE
-
+run.year <- 2026
 
 set.seed(123)
 N_SIM_SCENARIOS <- 2000
 N_SIM_SUBDIV    <- 1000 #5000 for final
 
 # Counterfactual configuration
-without_areas <- c(55)   # use c() so this can be extended later
+without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NO
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
 
@@ -63,24 +71,47 @@ source("run/qa_checks.R")
 
 
 # =========================
-# 1. DATA + SPATIAL (cached)
+# 1. DATA
+# =========================
+# =========================
+# 1. DATA
 # =========================
 
-if (USE_CACHE && file.exists(file.path(outPath, "spatial_data.rds"))) {
+D <- prepare_data(
+  dataPath = dataPath,
+  outPath = outPath,
+  run_year = run.year,
+  rebuild = !USE_CACHE
+)
+
+# =========================
+# 2. SPATIAL (cached)
+# =========================
+
+if (USE_CACHE &&
+    file.exists(file.path(outPath, "spatial_data.rds"))) {
 
   message("Loading spatial data from cache")
-  S_all <- readRDS(file.path(outPath, "spatial_data.rds"))
+
+  S_all <- readRDS(
+    file.path(outPath, "spatial_data.rds")
+  )
 
 } else {
 
-  message("Running full data + spatial pipeline")
+  message("Running full spatial pipeline")
 
-  D <- prepare_data(dataPath)
-  D$table1 <- add_ices_enrichment(D$table1, dataPath)
+  D$table1 <- add_ices_enrichment(
+    D$table1,
+    dataPath
+  )
 
   S_all <- prepare_spatial(D)
 
-  saveRDS(S_all, file = file.path(outPath, "spatial_data.rds"))
+  saveRDS(
+    S_all,
+    file = file.path(outPath, "spatial_data.rds")
+  )
 }
 
 # -------------------------
@@ -197,17 +228,6 @@ export_ices(rect_total, rect_wind, outPath)
 # =========================
 
 #remove
-# plot_method_comparison(scenario_results)
-# plot_total(scenario_results, method = "count") #method is area or count
-# plot_components(scenario_results, method = "count") #method is area or count
-# plot_count_scenarios(scenario_results)
-
-#some scenarios
-plot_total_marginal(scenario_results_all)
-plot_components_count_marginal(scenario_results_all)
-## OR with data where areas are dropped
-plot_total_marginal(scenario_results)
-plot_components_count_marginal(scenario_results)
 
 # Fishing map
 csq_year <- S$sf_list[["2023"]]
@@ -308,28 +328,481 @@ plot_total_with_without_wind_id(
 )
 
 
-##remove
 
-cables_FIN <- S$cable_full %>%
-  dplyr::filter(country == "Finland")
+#### summaries ####
 
-ggplot() +
-  geom_sf(data = S$coast, fill = "grey80") +
-  geom_sf(data = S$wind %>% filter(country == "Finland"),
-          fill = NA, colour = "blue") +
-  geom_sf(data = cables_FIN, fill = "orange", alpha = 0.6) +
-  coord_sf(xlim = c(17, 26), ylim = c(60, 66)) +
-  theme_minimal()
+plot_total_marginal_mean_years(scenario_results_all)
+plot_total_marginal_mean_years(scenario_results)
+
+#some scenarios
+plot_total_marginal(scenario_results_all)
+plot_components_count_marginal(scenario_results_all)
+
+## OR with data where areas are dropped
+plot_total_marginal(scenario_results)
+plot_components_count_marginal(scenario_results)
+
+
+#### Plot map of average fishing ####
+
+#2016 is different
+
+years_use <- c("2020", "2021", "2022", "2023", "2024", "2025")
+
+mean_csq_2020_2025 <- purrr::map_dfr(years_use, function(y) {
+
+  S$sf_list[[y]] %>%
+    dplyr::mutate(
+      Year = y,
+      geom_key = sf::st_as_text(sf::st_geometry(.))
+    ) %>%
+    sf::st_drop_geometry() %>%
+    dplyr::select(
+      Year,
+      geom_key,
+      FishingHours,
+      TotValue,
+      TotWeight
+    )
+
+}) %>%
+  dplyr::group_by(geom_key) %>%
+  dplyr::summarise(
+    FishingHours = sum(FishingHours, na.rm = TRUE) / length(years_use),
+    TotValue     = sum(TotValue, na.rm = TRUE) / length(years_use),
+    TotWeight    = sum(TotWeight, na.rm = TRUE) / length(years_use),
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    geometry = sf::st_as_sfc(geom_key, crs = 4326)
+  ) %>%
+  sf::st_as_sf() %>%
+  dplyr::select(-geom_key)
+
+
+plot_fishing_with_wind(
+  mean_csq_2020_2025,
+  S_all$wind,
+  S$cable_full,
+  S$coast
+)
+
+
+source("run/calculate_similarity_years")
+
+wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
+  mean_csq = mean_csq_2020_2025,
+  wind = S_all$wind,
+  cable_full = S_all$cable_full
+)
+
+wind_overlap_mean <- wind_overlap_mean %>%
+  arrange(desc(total_perc))
+
+plot_wind_cable_overlap_bars(wind_overlap_mean)
+
+
+### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
+
+plot_wind_cable_overlap_bars(wind_overlap_mean)
 
 ----- run/data_prepare.R -----
-prepare_data <- function(dataPath) {
+prepare_data <- function(
+    dataPath,
+    outPath,
+    run_year,
+    rebuild = FALSE
+) {
 
-  table1 <- readRDS(file.path("out", "table1Save.rds"))
-  table2 <- readRDS(file.path("out", "table2Save.rds"))
+  table1_file <- file.path(outPath, "table1Save.rds")
+  table2_file <- file.path(outPath, "table2Save.rds")
+
+  # --------------------------------------------------
+  # Use cached prepared data if available
+  # --------------------------------------------------
+
+  if (!rebuild &&
+      file.exists(table1_file) &&
+      file.exists(table2_file)) {
+
+    message("Loading cached table1/table2")
+
+    table1Save <- readRDS(table1_file)
+    table2Save <- readRDS(table2_file)
+
+    return(
+      list(
+        table1 = as.data.frame(table1Save),
+        table2 = as.data.frame(table2Save)
+      )
+    )
+  }
+
+  # --------------------------------------------------
+  # Otherwise rebuild from yearly EFLALO/TACSAT files
+  # --------------------------------------------------
+
+  message("Building table1/table2 from cleanEflalo and tacsatEflalo files")
+
+  yearsToSubmit <- 2016:(run_year - 1)
+
+  table1 <- NULL
+  table2 <- NULL
+
+  for (yr in yearsToSubmit) {
+
+    message("Processing year ", yr)
+
+    env <- new.env()
+
+    load(
+      file = file.path(dataPath, paste0("cleanEflalo", yr, ".RData")),
+      envir = env
+    )
+
+    load(
+      file = file.path(dataPath, paste0("tacsatEflalo", yr, ".RData")),
+      envir = env
+    )
+
+    if (!exists("eflalo", envir = env)) {
+      stop("Object 'eflalo' not found in cleanEflalo", yr, ".RData")
+    }
+
+    if (!exists("tacsatEflalo", envir = env)) {
+      stop("Object 'tacsatEflalo' not found in tacsatEflalo", yr, ".RData")
+    }
+
+    eflalo <- get("eflalo", envir = env)
+    tacsatEflalo <- get("tacsatEflalo", envir = env)
+
+    eflalo <- as.data.frame(eflalo)
+    tacsatEflalo <- as.data.frame(tacsatEflalo)
+
+    # --------------------------------------------------
+    # TABLE 2: logbook table from eflalo
+    # --------------------------------------------------
+
+    eflalo$Year <- lubridate::year(eflalo$FT_LDATIM)
+    eflalo$Month <- lubridate::month(eflalo$FT_LDATIM)
+
+    eflalo$INTV <- 1
+    eflalo$record <- 1
+
+    res <- aggregate(
+      eflalo$record,
+      by = as.list(eflalo[, c("VE_COU", "VE_REF", "LE_CDAT")]),
+      FUN = sum,
+      na.rm = TRUE
+    )
+
+    colnames(res) <- c("VE_COU", "VE_REF", "LE_CDAT", "nrRecords")
+
+    eflalo <- merge(
+      eflalo,
+      res,
+      by = c("VE_COU", "VE_REF", "LE_CDAT")
+    )
+
+    eflalo$INTV <- eflalo$INTV / eflalo$nrRecords
+    eflalo$kwDays <- eflalo$VE_KW * eflalo$INTV
+
+    eflalo$tripInTacsat <- ifelse(
+      eflalo$FT_REF %in% tacsatEflalo$FT_REF,
+      "Y",
+      "N"
+    )
+
+    cols_kg <- grep("^LE_KG_", names(eflalo), value = TRUE)
+    cols_kg <- cols_kg[
+      !cols_kg %in% c("LE_KG_TOTAL", "LE_KG_TOT")
+    ]
+
+    cols_euro <- grep("^LE_EURO_", names(eflalo), value = TRUE)
+    cols_euro <- cols_euro[
+      !cols_euro %in% c("LE_EURO_TOTAL", "LE_EURO_TOT", "LE_EURO_ELE")
+    ]
+
+    cols_table2 <- c(
+      "VE_REF",
+      "VE_COU",
+      "Year",
+      "Month",
+      "LE_RECT",
+      "LE_GEAR",
+      "LE_MET",
+      "VE_LEN",
+      "tripInTacsat",
+      "INTV",
+      "kwDays",
+      "LE_KG_TOT",
+      "LE_EURO_TOT",
+      cols_kg,
+      cols_euro
+    )
+
+    missing_table2 <- setdiff(cols_table2, names(eflalo))
+
+    if (length(missing_table2) > 0) {
+      stop(
+        "Missing columns in eflalo for year ",
+        yr,
+        ": ",
+        paste(missing_table2, collapse = ", ")
+      )
+    }
+
+    table2_part <- cbind(
+      RT = "LE",
+      eflalo[, cols_table2]
+    )
+
+    if (is.null(table2)) {
+      table2 <- table2_part
+    } else {
+      table2 <- rbind(table2, table2_part)
+    }
+
+    # --------------------------------------------------
+    # TABLE 1: VMS table from tacsatEflalo
+    # --------------------------------------------------
+
+    cols_kg_tacsat <- grep("^LE_KG_", names(tacsatEflalo), value = TRUE)
+    cols_kg_tacsat <- cols_kg_tacsat[
+      !cols_kg_tacsat %in% c("LE_KG_TOT", "LE_KG_TOTAL")
+    ]
+
+    cols_euro_tacsat <- grep("^LE_EURO_", names(tacsatEflalo), value = TRUE)
+    cols_euro_tacsat <- cols_euro_tacsat[
+      !cols_euro_tacsat %in% c("LE_EURO_TOTAL", "LE_EURO_TOT", "LE_EURO_ELE")
+    ]
+
+    cols_table1 <- c(
+      "VE_REF",
+      "VE_COU",
+      "Year",
+      "Month",
+      "Csquare",
+      "MSFD_BBHT",
+      "depth",
+      "LE_GEAR",
+      "LE_MET",
+      "SI_SP",
+      "INTV",
+      "VE_LEN",
+      "kwHour",
+      "VE_KW",
+      "LE_KG_TOT",
+      "LE_EURO_TOT",
+      cols_kg_tacsat,
+      cols_euro_tacsat,
+      "GEARWIDTH",
+      "SA_M2"
+    )
+
+    missing_table1 <- setdiff(cols_table1, names(tacsatEflalo))
+
+    if (length(missing_table1) > 0) {
+      stop(
+        "Missing columns in tacsatEflalo for year ",
+        yr,
+        ": ",
+        paste(missing_table1, collapse = ", ")
+      )
+    }
+
+    table1_part <- cbind(
+      RT = "VE",
+      tacsatEflalo[, cols_table1]
+    )
+
+    if (is.null(table1)) {
+      table1 <- table1_part
+    } else {
+      table1 <- rbind(table1, table1_part)
+    }
+  }
+
+  # --------------------------------------------------
+  # Add vessel IDs
+  # --------------------------------------------------
+
+  table1$VE_ID <- table1$VE_REF
+  table2$VE_ID <- table2$VE_REF
+
+  # --------------------------------------------------
+  # Add vessel length classes
+  # --------------------------------------------------
+
+  length_keys <- c(
+    "VL0006",
+    "VL0608",
+    "VL0810",
+    "VL1012",
+    "VL1215",
+    "VL1518",
+    "VL1824",
+    "VL2440",
+    "VL40XX"
+  )
+
+  length_breaks <- c(
+    0,
+    6,
+    8,
+    10,
+    12,
+    15,
+    18,
+    24,
+    40,
+    Inf
+  )
+
+  table1$LENGTHCAT <- cut(
+    table1$VE_LEN,
+    breaks = length_breaks,
+    right = FALSE,
+    include.lowest = TRUE,
+    labels = length_keys
+  )
+
+  table2$LENGTHCAT <- cut(
+    table2$VE_LEN,
+    breaks = length_breaks,
+    right = FALSE,
+    include.lowest = TRUE,
+    labels = length_keys
+  )
+
+  # --------------------------------------------------
+  # Aggregate TABLE 1
+  # --------------------------------------------------
+
+  table1Save <- table1 %>%
+    tidyr::separate(
+      col = LE_MET,
+      into = c("MetierL4", "MetierL5"),
+      sep = "_",
+      extra = "drop",
+      remove = FALSE
+    ) %>%
+    dplyr::group_by(
+      RecordType = RT,
+      CountryCode = VE_COU,
+      Year,
+      Csquare,
+      MetierL4,
+      MetierL5,
+      MetierL6 = LE_MET,
+      VE_ID,
+      VesselLengthRange = LENGTHCAT,
+      Habitat = MSFD_BBHT,
+      Depth = depth
+    ) %>%
+    dplyr::summarise(
+      No_Records = dplyr::n(),
+      AverageFishingSpeed = mean(SI_SP, na.rm = TRUE),
+      FishingHour = sum(INTV, na.rm = TRUE),
+      AverageInterval = mean(INTV, na.rm = TRUE),
+      AverageVesselLength = mean(VE_LEN, na.rm = TRUE),
+      AveragekW = mean(VE_KW, na.rm = TRUE),
+      kWFishingHour = sum(kwHour, na.rm = TRUE),
+      SweptArea = sum(SA_M2, na.rm = TRUE),
+      TotWeight = sum(LE_KG_TOT, na.rm = TRUE),
+      TotValue = sum(LE_EURO_TOT, na.rm = TRUE),
+      NoDistinctVessels = dplyr::n_distinct(VE_ID, na.rm = TRUE),
+      VesselID = ifelse(
+        dplyr::n_distinct(VE_ID) < 3,
+        paste(unique(VE_ID), collapse = ";"),
+        "not_required"
+      ),
+      AverageGearWidth = mean(GEARWIDTH, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    dplyr::relocate(
+      NoDistinctVessels,
+      VesselID,
+      .before = Csquare
+    ) %>%
+    as.data.frame()
+
+  # --------------------------------------------------
+  # Aggregate TABLE 2
+  # --------------------------------------------------
+
+  table2Save <- table2 %>%
+    tidyr::separate(
+      col = LE_MET,
+      into = c("MetierL4", "MetierL5"),
+      sep = "_",
+      extra = "drop",
+      remove = FALSE
+    ) %>%
+    dplyr::group_by(
+      RecordType = RT,
+      CountryCode = VE_COU,
+      Year,
+      ICESrectangle = LE_RECT,
+      MetierL4,
+      MetierL5,
+      MetierL6 = LE_MET,
+      VE_ID,
+      VesselLengthRange = LENGTHCAT,
+      VMSEnabled = tripInTacsat
+    ) %>%
+    dplyr::summarise(
+      FishingDays = sum(INTV, na.rm = TRUE),
+      kWFishingDays = sum(kwDays, na.rm = TRUE),
+      TotWeight = sum(LE_KG_TOT, na.rm = TRUE),
+      TotValue = sum(as.integer(LE_EURO_TOT), na.rm = TRUE),
+      NoDistinctVessels = dplyr::n_distinct(VE_ID, na.rm = TRUE),
+      VesselID = ifelse(
+        dplyr::n_distinct(VE_ID) < 3,
+        paste(unique(VE_ID), collapse = ";"),
+        "not_required"
+      ),
+      .groups = "drop"
+    ) %>%
+    dplyr::relocate(
+      NoDistinctVessels,
+      VesselID,
+      .before = ICESrectangle
+    ) %>%
+    as.data.frame()
+
+  # --------------------------------------------------
+  # Save prepared data
+  # --------------------------------------------------
+
+  dir.create(outPath, recursive = TRUE, showWarnings = FALSE)
+
+  saveRDS(table1Save, table1_file)
+  saveRDS(table2Save, table2_file)
+
+  write.table(
+    table1Save,
+    file = file.path(outPath, "table1Save.csv"),
+    na = "",
+    row.names = FALSE,
+    col.names = TRUE,
+    sep = ",",
+    quote = FALSE
+  )
+
+  write.table(
+    table2Save,
+    file = file.path(outPath, "table2Save.csv"),
+    na = "",
+    row.names = FALSE,
+    col.names = TRUE,
+    sep = ",",
+    quote = FALSE
+  )
 
   list(
-    table1 = as.data.frame(table1),
-    table2 = as.data.frame(table2)
+    table1 = as.data.frame(table1Save),
+    table2 = as.data.frame(table2Save)
   )
 }
 
@@ -1030,6 +1503,299 @@ plot_total_with_without_wind_id <- function(
   )
 }
 
+
+# ============================================================
+# TOTAL IMPACT — MEAN ACROSS YEARS
+# ============================================================
+
+plot_total_marginal_mean_years <- function(
+    res,
+    outPath = "out",
+    label = "scenario"
+) {
+
+  df <- res %>%
+    filter(method == "count") %>%
+    select(
+      Year,
+      n_wind_select,
+      median_wind,
+      median_cable,
+      median_total
+    ) %>%
+    pivot_longer(
+      cols = c(median_wind, median_cable, median_total),
+      names_to = "component",
+      values_to = "value"
+    ) %>%
+    mutate(
+      component = recode(
+        component,
+        median_wind = "Wind",
+        median_cable = "Cable",
+        median_total = "Total"
+      )
+    ) %>%
+    group_by(n_wind_select, component) %>%
+    summarise(
+      mean_value = mean(value, na.rm = TRUE),
+      lower = quantile(value, 0.025, na.rm = TRUE),
+      upper = quantile(value, 0.975, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  p <- ggplot(
+    df,
+    aes(
+      x = n_wind_select,
+      y = mean_value,
+      colour = component,
+      fill = component
+    )
+  ) +
+    geom_ribbon(
+      aes(
+        ymin = lower,
+        ymax = upper
+      ),
+      alpha = 0.15,
+      colour = NA
+    ) +
+    geom_line(linewidth = 1) +
+    coord_cartesian(
+      xlim = c(0, 33),
+      ylim = c(0, 25)
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Number of wind areas",
+      y = "% fishing affected",
+      title = "Mean impact across years",
+      subtitle = "Lines = mean across years, ribbons = interannual variability",
+      colour = "Component",
+      fill = "Component"
+    )
+
+  print(p)
+
+  ggsave(
+    file.path(
+      outPath,
+      paste0("scenario_mean_years_", label, ".png")
+    ),
+    plot = p,
+    width = 8,
+    height = 6
+  )
+
+  invisible(p)
+}
+
+# ============================================================
+# WIND VS CABLE VS TOTAL — MEAN ACROSS YEARS
+# ============================================================
+
+plot_components_count_marginal_mean_years <- function(res, outPath = "out") {
+
+  df <- res %>%
+    dplyr::filter(method == "count") %>%
+    dplyr::select(
+      Year,
+      n_wind_select,
+      median_wind,
+      median_cable,
+      median_total
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(median_wind, median_cable, median_total),
+      names_to = "component",
+      values_to = "value"
+    ) %>%
+    dplyr::mutate(
+      component = dplyr::recode(
+        component,
+        median_wind  = "Wind",
+        median_cable = "Cable",
+        median_total = "Total"
+      )
+    ) %>%
+    dplyr::group_by(n_wind_select, component) %>%
+    dplyr::summarise(
+      mean_value = mean(value, na.rm = TRUE),
+      lower      = quantile(value, 0.025, na.rm = TRUE),
+      upper      = quantile(value, 0.975, na.rm = TRUE),
+      sd_value   = sd(value, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  p <- ggplot(
+    df,
+    aes(
+      x = n_wind_select,
+      y = mean_value,
+      colour = component,
+      fill = component
+    )
+  ) +
+    geom_ribbon(
+      aes(ymin = lower, ymax = upper),
+      alpha = 0.18,
+      colour = NA
+    ) +
+    geom_line(linewidth = 1) +
+    theme_minimal() +
+    labs(
+      x = "Number of wind areas",
+      y = "% fishing affected",
+      title = "Mean wind, cable and total impact across years",
+      subtitle = "Lines = mean of annual median impacts; ribbons = 2.5–97.5% range across years (interannual variability)" ,
+      colour = "Component",
+      fill = "Component"
+    )
+
+  print(p)
+
+  ggsave(
+    file.path(outPath, "scenario_components_count_marginal_mean_years.png"),
+    plot = p,
+    width = 8,
+    height = 6
+  )
+}
+
+
+
+##### IMPACT PER WIND AREA #####
+
+
+#Preparation of data 
+
+calc_wind_cable_overlap_from_mean_fishing <- function(
+    mean_csq,
+    wind,
+    cable_full
+) {
+
+  mean_csq_p <- mean_csq %>%
+    sf::st_transform(3067)
+
+  wind_p <- wind %>%
+    sf::st_transform(3067)
+
+  cable_p <- cable_full %>%
+    sf::st_transform(3067)
+
+  total_hours <- sum(mean_csq_p$FishingHours, na.rm = TRUE)
+
+  if (total_hours == 0) {
+    stop("Total FishingHours is zero.")
+  }
+
+  purrr::map_dfr(wind_p$wind_id, function(wid) {
+
+    wind_one <- wind_p %>%
+      dplyr::filter(wind_id == wid)
+
+    cable_one <- cable_p %>%
+      dplyr::filter(wind_id == wid)
+
+    wind_flag <- lengths(sf::st_intersects(mean_csq_p, wind_one)) > 0
+
+    if (nrow(cable_one) > 0) {
+      cable_flag <- lengths(sf::st_intersects(mean_csq_p, cable_one)) > 0
+    } else {
+      cable_flag <- rep(FALSE, nrow(mean_csq_p))
+    }
+
+    cable_only_flag <- cable_flag & !wind_flag
+
+    wind_hours <- sum(mean_csq_p$FishingHours[wind_flag], na.rm = TRUE)
+    cable_hours <- sum(mean_csq_p$FishingHours[cable_only_flag], na.rm = TRUE)
+
+    tibble::tibble(
+      wind_id = wid,
+      country = wind_one$country[1],
+      wind_perc = 100 * wind_hours / total_hours,
+      cable_perc = 100 * cable_hours / total_hours,
+      total_perc = 100 * (wind_hours + cable_hours) / total_hours
+    )
+  })
+}
+
+### plot it ###
+plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
+
+  df_ranked <- df %>%
+    dplyr::arrange(dplyr::desc(total_perc)) %>%
+    dplyr::mutate(
+      rank_id = dplyr::row_number(),
+      rank_id = factor(rank_id, levels = as.character(seq_len(dplyr::n())))
+    )
+
+  plot_df <- df_ranked %>%
+    dplyr::select(
+      rank_id,
+      wind_id,
+      country,
+      wind_perc,
+      cable_perc,
+      total_perc
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(wind_perc, cable_perc),
+      names_to = "component",
+      values_to = "perc"
+    ) %>%
+    dplyr::mutate(
+      component = dplyr::recode(
+        component,
+        wind_perc = "Wind area",
+        cable_perc = "Cable"
+      )
+    )
+
+  p <- ggplot(
+  plot_df,
+  aes(
+    x = rank_id,
+    y = perc,
+    fill = component
+  )
+) +
+  geom_col(width = 0.8) +
+  theme_minimal() +
+  labs(
+    x = "Wind area rank",
+    y = "% of average fishing hours",
+    fill = "Overlap",
+    title = "Fishing overlap by wind area and cable",
+    subtitle = "Bars are ranked from largest to smallest total overlap"
+  ) +
+  theme(
+    axis.text.x = element_text(
+      angle = 90,
+      vjust = 0.5,
+      hjust = 1
+    ),
+    legend.position = c(0.85, 0.85),
+    legend.background = element_rect(
+      fill = scales::alpha("white", 0.8),
+      colour = "grey70"
+    )
+  )
+
+  print(p)
+
+  ggsave(
+    file.path(outPath, "wind_cable_overlap_stacked_bars.png"),
+    plot = p,
+    width = 10,
+    height = 6
+  )
+
+  return(p)
+}
+
 ----- run/plot_maps.R -----
 plot_base_map <- function(data_sf, fill_var, title,
                           ices_area = NULL,
@@ -1077,7 +1843,6 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
 
   p <- ggplot() +
 
-    # DATA layer
     geom_sf(
       data = csq_year,
       aes(fill = FishingHours),
@@ -1091,36 +1856,39 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
       name = "Fishing hours"
     )
 
-  # CABLE (optional, added properly)
   if (!is.null(cable)) {
     p <- p + geom_sf(
       data = cable,
-      fill = "orange",
+      fill = "purple",
       colour = NA,
       linewidth = 0.8,
       alpha = 0.6
     )
   }
 
-  # ✅ WIND
-  p <- p + geom_sf(
-    data = wind,
-    aes(colour = country),
-    fill = NA,
-    linewidth = 0.5
-  )
-
-  # ✅ BASE LAYERS (LAND LAST!)
-  p <- p + plot_base_layers(baltic)
-
-  # ✅ FINAL SETTINGS
   p <- p +
+    geom_sf(
+      data = wind,
+      aes(colour = country, linetype=country),
+      fill = NA,
+      linewidth = 0.7
+    ) +
     scale_colour_manual(
       values = c(
-        "Finland" = "#1f78b4",
-        "Sweden"  = "#33a02c"
+        "Finland" = "purple",      # change as desired
+        "Sweden"  = "purple"        # change as desired
       )
     ) +
+    scale_linetype_manual(
+      values = c(
+        "Finland" = "solid",
+        "Sweden"  = "solid"
+      )
+    )
+#Add land
+  p <- p + plot_base_layers(baltic)
+#final settings
+  p <- p +
     coord_sf(
       xlim = c(17, 26),
       ylim = c(60, 66),
@@ -1134,19 +1902,16 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
       } else {
         "Fishing intensity, wind areas and cable routes"
       },
-      colour = "Wind country"
+      linetype = "Country of wind area"
     )
 
   return(p)
 }
 
 
-
 ## ICES squares impact
 
-calc_ices_mean_sd <- function(sf_list, ices_rect, wind) {
-
-  years <- names(sf_list)
+calc_ices_mean_sd <- function(sf_list, ices_rect, wind, years_use = names(sf_list)) {
 
   res <- purrr::map_dfr(years, function(y) {
 
@@ -1711,7 +2476,7 @@ plot_base_layers <- function(baltic, ices_area = NULL) {
     geom_sf(
       data = baltic,
       fill = "grey80",
-      colour = "black",
+      colour = "grey50",
       linewidth = 0.4
     )
   ))
@@ -1996,3 +2761,176 @@ check_scenarios <- function(df) {
     warning("Scenario min > max detected")
   }
 }
+
+----- run/calculate_similarity_years -----
+years <- names(S$sf_list)
+
+fishing_long <- purrr::map_dfr(years, function(y) {
+  csq <- S$sf_list[[y]]
+
+  tibble(
+    Year = y,
+    csq_id = seq_len(nrow(csq)),
+    FishingHours = csq$FishingHours
+  )
+})
+
+
+fishing_long <- fishing_long %>%
+  group_by(Year) %>%
+  mutate(
+    perc = FishingHours / sum(FishingHours, na.rm = TRUE)
+  ) %>%
+  ungroup()
+
+
+perc_mat <- fishing_long %>%
+  select(csq_id, Year, perc) %>%
+  tidyr::pivot_wider(
+    names_from = Year,
+    values_from = perc,
+    values_fill = 0
+  ) %>%
+  arrange(csq_id)
+
+
+## correlation
+
+cor_perc <- cor(
+  perc_mat %>% select(-csq_id),
+  use = "pairwise.complete.obs"
+)
+
+cor_perc
+
+## cosine similarity
+
+cos_sim <- function(x, y) {
+  sum(x * y) / sqrt(sum(x^2) * sum(y^2))
+}
+
+ref_year <- "2019"
+
+cosine_vs_ref <- sapply(
+  setdiff(names(perc_mat), "csq_id"),
+  function(y) {
+    cos_sim(
+      perc_mat[[y]],
+      perc_mat[[ref_year]]
+    )
+  }
+)
+
+cosine_vs_ref
+
+
+#### OR AS ICES SQUARES
+
+years <- names(S$sf_list)
+
+rect_perc <- purrr::map_dfr(years, function(y) {
+
+  csq <- S$sf_list[[y]]
+
+  csq %>%
+    st_join(S$ices_rect["ICESNAME"]) %>%
+    st_drop_geometry() %>%
+    group_by(ICESNAME) %>%
+    summarise(
+      hours = sum(FishingHours, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    mutate(
+      Year = y,
+      perc = hours / sum(hours)
+    )
+})
+
+rect_mat <- rect_perc %>%
+  select(ICESNAME, Year, perc) %>%
+  pivot_wider(names_from = Year, values_from = perc, values_fill = 0)
+
+cor(
+  rect_mat %>% select(-ICESNAME),
+  use = "pairwise.complete.obs"
+)
+
+
+### OR define neighbours with distance D. USING COSINE SIMILARITY
+
+library(sf)
+library(spdep)
+
+years <- names(S$sf_list)
+ref_year <- "2019"
+
+csq_geom <- S$sf_list[[years[1]]] %>%
+  st_centroid() %>%
+  st_transform(3067)
+
+coords <- st_coordinates(csq_geom)
+
+#cosine similarity
+cos_sim <- function(x, y) {
+  sum(x * y, na.rm = TRUE) /
+    sqrt(sum(x^2, na.rm = TRUE) * sum(y^2, na.rm = TRUE))
+}
+
+#Compute similarity for a given radius
+library(spdep)
+
+similarity_at_radius <- function(radius_m) {
+
+  nb <- spdep::dnearneigh(coords, 0, radius_m)
+
+  lw <- spdep::nb2listw(
+    nb,
+    style = "W",
+    zero.policy = TRUE
+  )
+
+  smooth_perc <- function(p) {
+    spdep::lag.listw(
+      lw,
+      p,
+      zero.policy = TRUE
+    )
+  }
+
+  sapply(years, function(y) {
+    cos_sim(
+      smooth_perc(perc_mat[[y]]),
+      smooth_perc(perc_mat[[ref_year]])
+    )
+  })
+}
+
+## evaluate multiple radii
+
+radii_km <- c(5, 10, 20, 30, 50, 75, 100)
+radii_m  <- radii_km * 1000
+
+sim_by_radius <- purrr::map_dfr(radii_m, function(r) {
+
+  sim <- similarity_at_radius(r)
+
+  tibble(
+    radius_km = r / 1000,
+    Year = names(sim),
+    cosine_similarity = as.numeric(sim)
+  )
+})
+
+### visualise
+
+ggplot(
+  sim_by_radius,
+  aes(x = radius_km, y = cosine_similarity, colour = Year)
+) +
+  geom_line() +
+  theme_minimal() +
+  labs(
+    x = "Neighborhood radius (km)",
+    y = "Cosine similarity vs 2019",
+    title = "Scale dependence of spatial fishing pattern stability"
+  )

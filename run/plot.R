@@ -366,16 +366,6 @@ calc_wind_cable_overlap_from_mean_fishing <- function(
   })
 }
 
-wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
-  mean_csq = mean_csq_2020_2025,
-  wind = S_all$wind,
-  cable_full = S_all$cable_full
-)
-
-
-wind_overlap_mean %>%
-  dplyr::arrange(dplyr::desc(total_perc))
-
 ### plot it ###
 plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
 

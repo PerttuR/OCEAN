@@ -1,3 +1,9 @@
+## IF YOU NEED TO CLEAN THE SESSION
+
+# rm(list = ls())
+# gc()
+
+
 # =========================
 # LIBRARIES
 # =========================
@@ -17,6 +23,11 @@ library(patchwork)
 # SETTINGS
 # =========================
 
+USE_CACHE <- TRUE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
+
+#which years to use for averages:
+defined_years = c("2017", "2018", "2019", "2020","2021","2022","2023","2024", "2025")
+
 sf::sf_use_s2(FALSE)
 
 options(sf_use_s2 = FALSE)
@@ -25,8 +36,7 @@ options(warn = -1)
 dataPath <- "orig"
 outPath  <- "out"
 
-USE_CACHE <- TRUE #TRUE TO USE older runs
-
+run.year <- 2026
 
 set.seed(123)
 N_SIM_SCENARIOS <- 2000
@@ -36,6 +46,7 @@ N_SIM_SUBDIV    <- 1000 #5000 for final
 without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NO
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
+
 
 # =========================
 # LOAD MODULES
@@ -61,24 +72,47 @@ source("run/qa_checks.R")
 
 
 # =========================
-# 1. DATA + SPATIAL (cached)
+# 1. DATA
+# =========================
+# =========================
+# 1. DATA
 # =========================
 
-if (USE_CACHE && file.exists(file.path(outPath, "spatial_data.rds"))) {
+D <- prepare_data(
+  dataPath = dataPath,
+  outPath = outPath,
+  run_year = run.year,
+  rebuild = !USE_CACHE
+)
+
+# =========================
+# 2. SPATIAL (cached)
+# =========================
+
+if (USE_CACHE &&
+    file.exists(file.path(outPath, "spatial_data.rds"))) {
 
   message("Loading spatial data from cache")
-  S_all <- readRDS(file.path(outPath, "spatial_data.rds"))
+
+  S_all <- readRDS(
+    file.path(outPath, "spatial_data.rds")
+  )
 
 } else {
 
-  message("Running full data + spatial pipeline")
+  message("Running full spatial pipeline")
 
-  D <- prepare_data(dataPath)
-  D$table1 <- add_ices_enrichment(D$table1, dataPath)
+  D$table1 <- add_ices_enrichment(
+    D$table1,
+    dataPath
+  )
 
   S_all <- prepare_spatial(D)
 
-  saveRDS(S_all, file = file.path(outPath, "spatial_data.rds"))
+  saveRDS(
+    S_all,
+    file = file.path(outPath, "spatial_data.rds")
+  )
 }
 
 # -------------------------
@@ -99,7 +133,11 @@ if (length(without_areas) > 0) {
 # 2. REVENUE
 # =========================
 
-ices_revenue <- build_revenue_ices(S, dataPath)
+ices_revenue <- build_revenue_ices(
+  S,
+  dataPath,
+  years_use = defined_years
+)
 
 # =========================
 # 3. BASELINE
@@ -209,18 +247,40 @@ plot_fishing_with_wind(csq_year, S$wind, S$cable_full, S$coast)
 plot_fishing_with_wind(csq_year, S$wind, baltic = S$coast)
 
 # ICES stats
-ices_stats <- calc_ices_mean_sd(S$sf_list, S$ices_rect, S$wind)
+
+ices_stats <- calc_ices_mean_sd(
+  S$sf_list,
+  S$ices_rect,
+  S$wind,
+  years_use = defined_years
+)
 
 ices_plot <- S$ices_rect %>%
   left_join(ices_stats, by = "ICESNAME")
 
 # ICES maps
+years_use <- defined_years
+
+ices_stats <- calc_ices_mean_sd(
+  S$sf_list,
+  S$ices_rect,
+  S$wind,
+  years_use = years_use
+)
+
 p1 <- plot_base_map(
   ices_plot,
   "Mean",
-  "Average share of fishing in wind areas (2016–2025)",
+  paste0(
+    "Average share of fishing in wind areas (",
+    min(years_use),
+    "–",
+    max(years_use),
+    ")"
+  ),
   ices_area = S$ices_area,
-  baltic = S$coast
+  baltic = S$coast,
+  fill_title = "fishing share (%)"
 )
 
 p2 <- plot_base_map(
@@ -234,12 +294,24 @@ p2 <- plot_base_map(
 p1 + p2
 
 # Revenue map
+
 plot_base_map(
   ices_revenue,
   "rev_Mean",
-  "Average revenue (2016–2025)",
+  paste0(
+  "Average revenue (",
+  min(defined_years),
+  "–",
+  max(defined_years),
+  ")"
+),
   ices_area = S$ices_area,
-  baltic = S$coast
+  baltic = S$coast,
+  label_fun = scales::label_number(
+    big.mark = " ",
+    accuracy = 1
+  ),
+  fill_title = "Mean revenue (€)"
 )
 
 # =========================
@@ -312,11 +384,11 @@ plot_components_count_marginal(scenario_results)
 
 #### Plot map of average fishing ####
 
-#2016 is different
+#2016 is different so do not use it
 
-years_use <- c("2020", "2021", "2022", "2023", "2024", "2025")
+years_use <- defined_years
 
-mean_csq_2020_2025 <- purrr::map_dfr(years_use, function(y) {
+mean_csq_defined <- purrr::map_dfr(years_use, function(y) {
 
   S$sf_list[[y]] %>%
     dplyr::mutate(
@@ -348,14 +420,53 @@ mean_csq_2020_2025 <- purrr::map_dfr(years_use, function(y) {
 
 
 plot_fishing_with_wind(
-  mean_csq_2020_2025,
+  mean_csq_defined,
   S_all$wind,
   S$cable_full,
   S$coast
 )
 
 
-source("run/calculate_similarity_years")
+#### fishing areas maps in ices recs
+
+ices_hours <- calc_ices_mean_hours(
+  S$sf_list,
+  S$ices_rect,
+  years_use = defined_years
+)
+
+ices_hours_plot <- S$ices_rect %>%
+  left_join(ices_hours, by = "ICESNAME")
+
+plot_base_map(
+  ices_hours_plot,
+  "MeanHours",
+  paste0(
+    "Average fishing hours (",
+    min(years_use),
+    "–",
+    max(years_use),
+    ")"
+  ),
+  ices_area = S$ices_area,
+  baltic = S$coast,
+  fill_title = "Fishing hours"
+)
+
+
+### Some statistics
+
+source("run/calculate_similarity_years.R")
+
+wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
+  mean_csq = mean_csq_defined,
+  wind = S_all$wind,
+  cable_full = S_all$cable_full
+)
+
+wind_overlap_mean <- wind_overlap_mean %>%
+  arrange(desc(total_perc))
+
 
 
 ### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
