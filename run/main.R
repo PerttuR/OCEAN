@@ -18,6 +18,7 @@ library(future.apply) #use more cores at the same time
 library(tidyr)
 library(readxl)
 library(patchwork) 
+library(ggnewscale)
 
 # =========================
 # SETTINGS
@@ -26,7 +27,15 @@ library(patchwork)
 USE_CACHE <- TRUE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
 
 #which years to use for averages:
-defined_years = c("2017", "2018", "2019", "2020","2021","2022","2023","2024", "2025")
+defined_years = 2017:2025
+
+### Heidi revenue data
+
+years_use_revenue <- defined_years #or 2020:2024
+revenue_sheet <- "Pienet_troolarit"
+revenue_variable <- "liikevaihto_r" # OR "tuototyht_r" , "kayttokate_r"
+
+####
 
 sf::sf_use_s2(FALSE)
 
@@ -47,6 +56,7 @@ without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT TH
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
 
+defined_years_chr <- as.character(defined_years)
 
 # =========================
 # LOAD MODULES
@@ -71,9 +81,7 @@ source("run/qa_checks.R")
 
 
 
-# =========================
-# 1. DATA
-# =========================
+
 # =========================
 # 1. DATA
 # =========================
@@ -136,7 +144,9 @@ if (length(without_areas) > 0) {
 ices_revenue <- build_revenue_ices(
   S,
   dataPath,
-  years_use = defined_years
+  years_use = years_use_revenue,
+  sheet = revenue_sheet,
+  value_col = revenue_variable
 )
 
 # =========================
@@ -386,7 +396,7 @@ plot_components_count_marginal(scenario_results)
 
 #2016 is different so do not use it
 
-years_use <- defined_years
+years_use <- defined_years_chr
 
 mean_csq_defined <- purrr::map_dfr(years_use, function(y) {
 

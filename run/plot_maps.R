@@ -45,50 +45,63 @@ plot_base_map <- function(data_sf, fill_var, title,
 
 plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
 
-  p <- ggplot() +
+ library(ggnewscale)
 
-    geom_sf(
-      data = csq_year,
-      aes(fill = FishingHours),
-      colour = NA
-    ) +
+p <- ggplot() +
 
-    scale_fill_viridis_c(
-      option = "cividis",
-      direction = -1,
-      trans = "sqrt",
-      name = "Fishing hours"
-    )
+  geom_sf(
+    data = csq_year,
+    aes(fill = FishingHours),
+    colour = NA
+  ) +
 
-  if (!is.null(cable)) {
-    p <- p + geom_sf(
-      data = cable,
-      fill = "purple",
-      colour = NA,
-      linewidth = 0.8,
-      alpha = 0.6
-    )
-  }
+  scale_fill_viridis_c(
+    option = "cividis",
+    direction = -1,
+    trans = "sqrt",
+    name = "Fishing hours"
+  ) +
+
+  ggnewscale::new_scale_fill() +
+
+  geom_sf(
+    data = wind,
+    aes(fill = country),
+    colour = NA,
+    alpha = 0.65
+  ) +
+
+  scale_fill_manual(
+    values = c(
+      "Finland" = "#66C2A5",
+      "Sweden" = "#8DA0CB"
+    ),
+    name = "Wind area country"
+  )
+#cables
+
+if (!is.null(cable)) {
+
+  cable$Layer <- "Cable corridor"
 
   p <- p +
+    ggnewscale::new_scale_fill() +
+
     geom_sf(
-      data = wind,
-      aes(colour = country, linetype=country),
-      fill = NA,
-      linewidth = 0.7
+      data = cable,
+      aes(fill = Layer),
+      colour = NA,
+      alpha = 0.35
     ) +
-    scale_colour_manual(
+
+    scale_fill_manual(
       values = c(
-        "Finland" = "purple",      # change as desired
-        "Sweden"  = "purple"        # change as desired
-      )
-    ) +
-    scale_linetype_manual(
-      values = c(
-        "Finland" = "solid",
-        "Sweden"  = "solid"
-      )
+        "Cable corridor" = "dark grey"
+      ),
+      name = NULL
     )
+}
+
 #Add land
   p <- p + plot_base_layers(baltic)
 #final settings
@@ -105,8 +118,7 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
         "Fishing intensity and wind areas"
       } else {
         "Fishing intensity, wind areas and cable routes"
-      },
-      linetype = "Country of wind area"
+      }
     )
 
   return(p)

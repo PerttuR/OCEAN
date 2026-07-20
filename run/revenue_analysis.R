@@ -1,5 +1,5 @@
 
-build_revenue_ices <- function(S, dataPath, years_use = 2020:2024) {
+build_revenue_ices <- function(S, dataPath, years_use = 2020:2024, sheet = "Isot_troolarit", value_col = "liikevaihto_r") {
 
   # =========================
   # 1. Load data
@@ -7,7 +7,7 @@ build_revenue_ices <- function(S, dataPath, years_use = 2020:2024) {
 
 revenue <- read_excel(
   file.path(dataPath, "Allokoidut_tulokset_saaliinarvolla.xlsx"),
-  sheet = "Isot_troolarit"
+  sheet = sheet
 ) %>%
   mutate(
     Year = 2000 + vuosi
@@ -21,7 +21,7 @@ revenue <- read_excel(
   revenue_sum <- revenue %>%
     group_by(ICES_Rect, Year) %>%
     summarise(
-      value = sum(liikevaihto_r, na.rm = TRUE),
+      value = sum(.data[[value_col]], na.rm = TRUE),
       .groups = "drop"
     )
 
