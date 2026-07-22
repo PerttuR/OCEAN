@@ -26,7 +26,7 @@ library(ggnewscale)
 # SETTINGS
 # =========================
 
-USE_CACHE <- TRUE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
+USE_CACHE <- FALSE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
 
 #which years to use for averages:
 defined_years = 2017:2025
@@ -34,7 +34,7 @@ defined_years = 2017:2025
 ### Heidi revenue data
 
 years_use_revenue <- defined_years #or 2020:2024
-revenue_sheet <- "Pienet_troolarit"
+revenue_sheet <-"Isot_troolarit" #"Pienet_troolarit" tai "Isot_troolarit"
 revenue_variable <- "liikevaihto_r" # OR "tuototyht_r" , "kayttokate_r"
 
 ####
@@ -258,20 +258,9 @@ plot_fishing_with_wind(csq_year, S$wind, S$cable_full, S$coast)
 #withOUT cables
 plot_fishing_with_wind(csq_year, S$wind, baltic = S$coast)
 
-# ICES stats
-
-ices_stats <- calc_ices_mean_sd(
-  S$sf_list,
-  S$ices_rect,
-  S$wind,
-  years_use = defined_years
-)
-
-ices_plot <- S$ices_rect %>%
-  left_join(ices_stats, by = "ICESNAME")
-
 # ICES maps
-years_use <- defined_years
+
+years_use <- defined_years_chr
 
 ices_stats <- calc_ices_mean_sd(
   S$sf_list,
@@ -279,6 +268,9 @@ ices_stats <- calc_ices_mean_sd(
   S$wind,
   years_use = years_use
 )
+
+ices_plot <- S$ices_rect %>%
+  dplyr::left_join(ices_stats, by = "ICESNAME")
 
 p1 <- plot_base_map(
   ices_plot,
@@ -444,7 +436,7 @@ plot_fishing_with_wind(
 ices_hours <- calc_ices_mean_hours(
   S$sf_list,
   S$ices_rect,
-  years_use = defined_years
+  years_use = defined_years_chr
 )
 
 ices_hours_plot <- S$ices_rect %>%
@@ -455,9 +447,9 @@ plot_base_map(
   "MeanHours",
   paste0(
     "Average fishing hours (",
-    min(years_use),
+    min(defined_years_chr),
     "–",
-    max(years_use),
+    max(defined_years_chr),
     ")"
   ),
   ices_area = S$ices_area,
@@ -1001,7 +993,7 @@ coast <- rnaturalearth::ne_countries(
   returnclass = "sf"
 ) %>%
   dplyr::filter(admin %in% c(
-    "Finland","Sweden","Norway","Russia","Denmark","Germany",
+    "Finland", "Aland", "Sweden","Norway","Russia","Denmark","Germany",
     "Estonia","Latvia","Lithuania","Poland"
   )) %>%
   sf::st_transform(4326)
@@ -2008,6 +2000,8 @@ if (!is.null(cable)) {
 
 calc_ices_mean_sd <- function(sf_list, ices_rect, wind, years_use = names(sf_list)) {
 
+  years_use <- as.character(years_use)
+
   res <- purrr::map_dfr(years_use, function(y) {
 
     csq <- sf_list[[y]]
@@ -2140,6 +2134,9 @@ calc_ices_mean_hours <- function(
     ices_rect,
     years_use = names(sf_list)
 ) {
+
+  years_use <- as.character(years_use)
+
 
   res <- purrr::map_dfr(years_use, function(y) {
 
@@ -2572,7 +2569,8 @@ add_map_decorations <- function() {
   list(
     ggspatial::annotation_scale(
       location = "br",
-      width_hint = 0.3
+      width_hint = 0.3,
+      pad_y = unit(1, "cm")
     ),
     ggspatial::annotation_north_arrow(
       location = "tl",
@@ -3064,3 +3062,4 @@ ggplot(
     y = "Cosine similarity vs 2019",
     title = "Scale dependence of spatial fishing pattern stability"
   )
+

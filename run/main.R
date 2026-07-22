@@ -24,7 +24,7 @@ library(ggnewscale)
 # SETTINGS
 # =========================
 
-USE_CACHE <- TRUE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
+USE_CACHE <- FALSE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
 
 #which years to use for averages:
 defined_years = 2017:2025
@@ -32,7 +32,7 @@ defined_years = 2017:2025
 ### Heidi revenue data
 
 years_use_revenue <- defined_years #or 2020:2024
-revenue_sheet <- "Pienet_troolarit"
+revenue_sheet <- "Isot_troolarit" #"Pienet_troolarit" tai "Isot_troolarit"
 revenue_variable <- "liikevaihto_r" # OR "tuototyht_r" , "kayttokate_r"
 
 ####
@@ -474,3 +474,70 @@ wind_overlap_mean <- wind_overlap_mean %>%
 ### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
 
 plot_wind_cable_overlap_bars(wind_overlap_mean)
+
+
+
+
+## check correlations of revenue and gfishing hours
+
+corr_df <- ices_hours_plot %>%
+  sf::st_drop_geometry() %>%
+  select(
+    ICESNAME,
+    MeanHours
+  ) %>%
+  left_join(
+    ices_revenue %>%
+      sf::st_drop_geometry() %>%
+      select(
+        ICESNAME,
+        rev_Mean
+      ),
+    by = "ICESNAME"
+  ) %>%
+  filter(
+    !is.na(MeanHours),
+    !is.na(rev_Mean)
+  )
+
+summary(corr_df)
+
+cor.test(
+  corr_df$MeanHours,
+  corr_df$rev_Mean,
+  method = "spearman"
+)
+
+ggplot(
+  corr_df,
+  aes(
+    x = MeanHours,
+    y = rev_Mean
+  )
+) +
+  geom_point(size = 2) +
+  geom_smooth(
+    method = "lm",
+    colour = "black"
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Mean fishing hours",
+    y = "Mean revenue (€)"
+  )
+
+
+### Scenarioiden arvot
+
+scenario_results %>%
+  filter(
+    method == "area",
+    share %in% c(0.25, 0.50, 0.75)
+  ) %>%
+  group_by(share) %>%
+  summarise(
+    mean_impact = mean(mean_total, na.rm = TRUE),
+    min_impact = min(mean_total, na.rm = TRUE),
+    max_impact = max(mean_total, na.rm = TRUE),
+    .groups = "drop"
+  )
