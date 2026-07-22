@@ -20,13 +20,24 @@ library(future.apply) #use more cores at the same time
 library(tidyr)
 library(readxl)
 library(patchwork) 
+library(ggnewscale)
 
 # =========================
 # SETTINGS
 # =========================
 
-USE_CACHE <- FALSE #TRUE TO USE older runs
+USE_CACHE <- TRUE #TRUE TO USE data from previous runs, FALSE to run everything from scratch
 
+#which years to use for averages:
+defined_years = 2017:2025
+
+### Heidi revenue data
+
+years_use_revenue <- defined_years #or 2020:2024
+revenue_sheet <- "Pienet_troolarit"
+revenue_variable <- "liikevaihto_r" # OR "tuototyht_r" , "kayttokate_r"
+
+####
 
 sf::sf_use_s2(FALSE)
 
@@ -46,6 +57,8 @@ N_SIM_SUBDIV    <- 1000 #5000 for final
 without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NO
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
+
+defined_years_chr <- as.character(defined_years)
 
 # =========================
 # LOAD MODULES
@@ -70,9 +83,7 @@ source("run/qa_checks.R")
 
 
 
-# =========================
-# 1. DATA
-# =========================
+
 # =========================
 # 1. DATA
 # =========================
@@ -132,7 +143,13 @@ if (length(without_areas) > 0) {
 # 2. REVENUE
 # =========================
 
-ices_revenue <- build_revenue_ices(S, dataPath)
+ices_revenue <- build_revenue_ices(
+  S,
+  dataPath,
+  years_use = years_use_revenue,
+  sheet = revenue_sheet,
+  value_col = revenue_variable
+)
 
 # =========================
 # 3. BASELINE
@@ -242,18 +259,40 @@ plot_fishing_with_wind(csq_year, S$wind, S$cable_full, S$coast)
 plot_fishing_with_wind(csq_year, S$wind, baltic = S$coast)
 
 # ICES stats
-ices_stats <- calc_ices_mean_sd(S$sf_list, S$ices_rect, S$wind)
+
+ices_stats <- calc_ices_mean_sd(
+  S$sf_list,
+  S$ices_rect,
+  S$wind,
+  years_use = defined_years
+)
 
 ices_plot <- S$ices_rect %>%
   left_join(ices_stats, by = "ICESNAME")
 
 # ICES maps
+years_use <- defined_years
+
+ices_stats <- calc_ices_mean_sd(
+  S$sf_list,
+  S$ices_rect,
+  S$wind,
+  years_use = years_use
+)
+
 p1 <- plot_base_map(
   ices_plot,
   "Mean",
-  "Average share of fishing in wind areas (2016–2025)",
+  paste0(
+    "Average share of fishing in wind areas (",
+    min(years_use),
+    "–",
+    max(years_use),
+    ")"
+  ),
   ices_area = S$ices_area,
-  baltic = S$coast
+  baltic = S$coast,
+  fill_title = "fishing share (%)"
 )
 
 p2 <- plot_base_map(
@@ -267,12 +306,24 @@ p2 <- plot_base_map(
 p1 + p2
 
 # Revenue map
+
 plot_base_map(
   ices_revenue,
   "rev_Mean",
-  "Average revenue (2016–2025)",
+  paste0(
+  "Average revenue (",
+  min(defined_years),
+  "–",
+  max(defined_years),
+  ")"
+),
   ices_area = S$ices_area,
-  baltic = S$coast
+  baltic = S$coast,
+  label_fun = scales::label_number(
+    big.mark = " ",
+    accuracy = 1
+  ),
+  fill_title = "Mean revenue (€)"
 )
 
 # =========================
@@ -345,11 +396,11 @@ plot_components_count_marginal(scenario_results)
 
 #### Plot map of average fishing ####
 
-#2016 is different
+#2016 is different so do not use it
 
-years_use <- c("2020", "2021", "2022", "2023", "2024", "2025")
+years_use <- defined_years_chr
 
-mean_csq_2020_2025 <- purrr::map_dfr(years_use, function(y) {
+mean_csq_defined <- purrr::map_dfr(years_use, function(y) {
 
   S$sf_list[[y]] %>%
     dplyr::mutate(
@@ -381,17 +432,46 @@ mean_csq_2020_2025 <- purrr::map_dfr(years_use, function(y) {
 
 
 plot_fishing_with_wind(
-  mean_csq_2020_2025,
+  mean_csq_defined,
   S_all$wind,
   S$cable_full,
   S$coast
 )
 
 
-source("run/calculate_similarity_years")
+#### fishing areas maps in ices recs
+
+ices_hours <- calc_ices_mean_hours(
+  S$sf_list,
+  S$ices_rect,
+  years_use = defined_years
+)
+
+ices_hours_plot <- S$ices_rect %>%
+  left_join(ices_hours, by = "ICESNAME")
+
+plot_base_map(
+  ices_hours_plot,
+  "MeanHours",
+  paste0(
+    "Average fishing hours (",
+    min(years_use),
+    "–",
+    max(years_use),
+    ")"
+  ),
+  ices_area = S$ices_area,
+  baltic = S$coast,
+  fill_title = "Fishing hours"
+)
+
+
+### Some statistics
+
+source("run/calculate_similarity_years.R")
 
 wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
-  mean_csq = mean_csq_2020_2025,
+  mean_csq = mean_csq_defined,
   wind = S_all$wind,
   cable_full = S_all$cable_full
 )
@@ -399,7 +479,6 @@ wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
 wind_overlap_mean <- wind_overlap_mean %>%
   arrange(desc(total_perc))
 
-plot_wind_cable_overlap_bars(wind_overlap_mean)
 
 
 ### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
@@ -1799,7 +1878,9 @@ plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
 ----- run/plot_maps.R -----
 plot_base_map <- function(data_sf, fill_var, title,
                           ices_area = NULL,
-                          baltic = NULL) {
+                          baltic = NULL,
+                        label_fun = waiver(),
+                      fill_title = " ") {
 
   ggplot() +
 
@@ -1819,11 +1900,12 @@ plot_base_map <- function(data_sf, fill_var, title,
     scale_fill_viridis_c(
       option = "cividis",
       direction = -1,
-      na.value = "grey90"
+      na.value = "grey90",
+      labels = label_fun
     ) +
 
     coord_sf(
-      xlim = c(17, 25.62),
+      xlim = c(17, 26),
       ylim = c(60, 66),
       expand = FALSE
     ) +
@@ -1832,7 +1914,7 @@ plot_base_map <- function(data_sf, fill_var, title,
 
     add_map_decorations() +
 
-    labs(title = title, fill = "")
+    labs(title = title, fill = fill_title)
 }
 
 
@@ -1840,51 +1922,65 @@ plot_base_map <- function(data_sf, fill_var, title,
 #fishing intensity + wind
 
 plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
+wind$Layer <- "Wind area"
 
-  p <- ggplot() +
 
-    geom_sf(
-      data = csq_year,
-      aes(fill = FishingHours),
-      colour = NA
-    ) +
+p <- ggplot() +
 
-    scale_fill_viridis_c(
-      option = "cividis",
-      direction = -1,
-      trans = "sqrt",
-      name = "Fishing hours"
-    )
+  geom_sf(
+    data = csq_year,
+    aes(fill = FishingHours),
+    colour = NA
+  ) +
 
-  if (!is.null(cable)) {
-    p <- p + geom_sf(
-      data = cable,
-      fill = "purple",
-      colour = NA,
-      linewidth = 0.8,
-      alpha = 0.6
-    )
-  }
+  scale_fill_viridis_c(
+    option = "inferno", #or viridis
+    direction = -1,
+    #trans = "sqrt",
+    name = "Fishing hours",
+    guide = guide_colourbar (order = 1)
+  ) +
+
+  ggnewscale::new_scale_colour() +
+
+  geom_sf(
+    data = wind,
+    aes(colour = Layer),
+    fill = NA,
+    alpha = 0.8
+  ) +
+
+  scale_colour_manual(
+    values = c(
+      "Wind area" = "#20262d"
+    ),
+    name = NULL,
+    guide = guide_legend (order = 2)
+  )
+#cables
+
+if (!is.null(cable)) {
+
+  cable$Layer <- "Cable corridor"
 
   p <- p +
+    ggnewscale::new_scale_fill() +
+
     geom_sf(
-      data = wind,
-      aes(colour = country, linetype=country),
-      fill = NA,
-      linewidth = 0.7
+      data = cable,
+      aes(fill = Layer),
+      colour = NA,
+      alpha = 0.4
     ) +
-    scale_colour_manual(
+
+    scale_fill_manual(
       values = c(
-        "Finland" = "purple",      # change as desired
-        "Sweden"  = "purple"        # change as desired
-      )
-    ) +
-    scale_linetype_manual(
-      values = c(
-        "Finland" = "solid",
-        "Sweden"  = "solid"
-      )
+        "Cable corridor" = "#5e3d60"
+      ),
+      name = NULL
     )
+}
+
 #Add land
   p <- p + plot_base_layers(baltic)
 #final settings
@@ -1901,8 +1997,7 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
         "Fishing intensity and wind areas"
       } else {
         "Fishing intensity, wind areas and cable routes"
-      },
-      linetype = "Country of wind area"
+      }
     )
 
   return(p)
@@ -1913,7 +2008,7 @@ plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
 
 calc_ices_mean_sd <- function(sf_list, ices_rect, wind, years_use = names(sf_list)) {
 
-  res <- purrr::map_dfr(years, function(y) {
+  res <- purrr::map_dfr(years_use, function(y) {
 
     csq <- sf_list[[y]]
 
@@ -1967,7 +2062,7 @@ plot_ices_wind <- function(ices_sf, baltic, ices_area = NULL) {
     ) +
 
     coord_sf(
-      xlim = c(17, 25.62),
+      xlim = c(17, 26),
       ylim = c(60, 66),
       expand = FALSE
     ) +
@@ -2036,6 +2131,39 @@ plot_wind_id_map <- function(wind, baltic, outPath = "out") {
     width = 8,
     height = 8
   )
+}
+
+#### function for fishing maps
+
+calc_ices_mean_hours <- function(
+    sf_list,
+    ices_rect,
+    years_use = names(sf_list)
+) {
+
+  res <- purrr::map_dfr(years_use, function(y) {
+
+    csq <- sf_list[[y]]
+
+    csq %>%
+      st_join(ices_rect["ICESNAME"]) %>%
+      st_drop_geometry() %>%
+      group_by(ICESNAME) %>%
+      summarise(
+        TotalHours = sum(FishingHours, na.rm = TRUE),
+        .groups = "drop"
+      ) %>%
+      mutate(Year = y)
+
+  })
+
+  res %>%
+    group_by(ICESNAME) %>%
+    summarise(
+      MeanHours = mean(TotalHours, na.rm = TRUE),
+      SDHours   = sd(TotalHours, na.rm = TRUE),
+      .groups = "drop"
+    )
 }
 
 ----- run/spatial_utils.R -----
@@ -2349,19 +2477,20 @@ export_ices <- function(rect_total, rect_wind, outPath) {
 
 ----- run/revenue_analysis.R -----
 
-build_revenue_ices <- function(S, dataPath) {
+build_revenue_ices <- function(S, dataPath, years_use = 2020:2024, sheet = "Isot_troolarit", value_col = "liikevaihto_r") {
 
   # =========================
   # 1. Load data
   # =========================
 
-  revenue <- read_excel(
-    file.path(dataPath, "Allokoidut_tulokset_saaliinarvolla.xlsx"),
-    sheet = "Isot_troolarit"
+revenue <- read_excel(
+  file.path(dataPath, "Allokoidut_tulokset_saaliinarvolla.xlsx"),
+  sheet = sheet
+) %>%
+  mutate(
+    Year = 2000 + vuosi
   ) %>%
-    mutate(
-      Year = 2000 + vuosi
-    )
+  filter(Year %in% years_use)
 
   # =========================
   # 2. Aggregate per ICES + year
@@ -2370,7 +2499,7 @@ build_revenue_ices <- function(S, dataPath) {
   revenue_sum <- revenue %>%
     group_by(ICES_Rect, Year) %>%
     summarise(
-      value = sum(liikevaihto_r, na.rm = TRUE),
+      value = sum(.data[[value_col]], na.rm = TRUE),
       .groups = "drop"
     )
 
@@ -2762,7 +2891,7 @@ check_scenarios <- function(df) {
   }
 }
 
------ run/calculate_similarity_years -----
+----- run/calculate_similarity_years.R -----
 years <- names(S$sf_list)
 
 fishing_long <- purrr::map_dfr(years, function(y) {
@@ -2850,11 +2979,12 @@ rect_mat <- rect_perc %>%
   select(ICESNAME, Year, perc) %>%
   pivot_wider(names_from = Year, values_from = perc, values_fill = 0)
 
-cor(
+Rect_cor = cor(
   rect_mat %>% select(-ICESNAME),
   use = "pairwise.complete.obs"
 )
 
+print(round(Rect_cor, 2))
 
 ### OR define neighbours with distance D. USING COSINE SIMILARITY
 

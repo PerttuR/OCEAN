@@ -19,7 +19,8 @@ add_map_decorations <- function() {
   list(
     ggspatial::annotation_scale(
       location = "br",
-      width_hint = 0.3
+      width_hint = 0.3,
+      pad_y = unit(1, "cm")
     ),
     ggspatial::annotation_north_arrow(
       location = "tl",

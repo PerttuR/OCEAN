@@ -113,7 +113,7 @@ coast <- rnaturalearth::ne_countries(
   returnclass = "sf"
 ) %>%
   dplyr::filter(admin %in% c(
-    "Finland","Sweden","Norway","Russia","Denmark","Germany",
+    "Finland", "Aland", "Sweden","Norway","Russia","Denmark","Germany",
     "Estonia","Latvia","Lithuania","Poland"
   )) %>%
   sf::st_transform(4326)

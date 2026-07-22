@@ -27,7 +27,7 @@ plot_base_map <- function(data_sf, fill_var, title,
     ) +
 
     coord_sf(
-      xlim = c(17, 25.62),
+      xlim = c(17, 26),
       ylim = c(60, 66),
       expand = FALSE
     ) +
@@ -44,8 +44,8 @@ plot_base_map <- function(data_sf, fill_var, title,
 #fishing intensity + wind
 
 plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
+wind$Layer <- "Wind area"
 
- library(ggnewscale)
 
 p <- ggplot() +
 
@@ -56,27 +56,28 @@ p <- ggplot() +
   ) +
 
   scale_fill_viridis_c(
-    option = "cividis",
+    option = "inferno", #or viridis
     direction = -1,
-    trans = "sqrt",
-    name = "Fishing hours"
+    #trans = "sqrt",
+    name = "Fishing hours",
+    guide = guide_colourbar (order = 1)
   ) +
 
-  ggnewscale::new_scale_fill() +
+  ggnewscale::new_scale_colour() +
 
   geom_sf(
     data = wind,
-    aes(fill = country),
-    colour = NA,
-    alpha = 0.65
+    aes(colour = Layer),
+    fill = NA,
+    alpha = 0.8
   ) +
 
-  scale_fill_manual(
+  scale_colour_manual(
     values = c(
-      "Finland" = "#66C2A5",
-      "Sweden" = "#8DA0CB"
+      "Wind area" = "#20262d"
     ),
-    name = "Wind area country"
+    name = NULL,
+    guide = guide_legend (order = 2)
   )
 #cables
 
@@ -91,12 +92,12 @@ if (!is.null(cable)) {
       data = cable,
       aes(fill = Layer),
       colour = NA,
-      alpha = 0.35
+      alpha = 0.4
     ) +
 
     scale_fill_manual(
       values = c(
-        "Cable corridor" = "dark grey"
+        "Cable corridor" = "#5e3d60"
       ),
       name = NULL
     )
@@ -128,6 +129,8 @@ if (!is.null(cable)) {
 ## ICES squares impact
 
 calc_ices_mean_sd <- function(sf_list, ices_rect, wind, years_use = names(sf_list)) {
+
+  years_use <- as.character(years_use)
 
   res <- purrr::map_dfr(years_use, function(y) {
 
@@ -183,7 +186,7 @@ plot_ices_wind <- function(ices_sf, baltic, ices_area = NULL) {
     ) +
 
     coord_sf(
-      xlim = c(17, 25.62),
+      xlim = c(17, 26),
       ylim = c(60, 66),
       expand = FALSE
     ) +
@@ -254,13 +257,16 @@ plot_wind_id_map <- function(wind, baltic, outPath = "out") {
   )
 }
 
-#### functin for fishing maps
+#### function for fishing maps
 
 calc_ices_mean_hours <- function(
     sf_list,
     ices_rect,
     years_use = names(sf_list)
 ) {
+
+  years_use <- as.character(years_use)
+
 
   res <- purrr::map_dfr(years_use, function(y) {
 

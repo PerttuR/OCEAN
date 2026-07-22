@@ -256,20 +256,9 @@ plot_fishing_with_wind(csq_year, S$wind, S$cable_full, S$coast)
 #withOUT cables
 plot_fishing_with_wind(csq_year, S$wind, baltic = S$coast)
 
-# ICES stats
-
-ices_stats <- calc_ices_mean_sd(
-  S$sf_list,
-  S$ices_rect,
-  S$wind,
-  years_use = defined_years
-)
-
-ices_plot <- S$ices_rect %>%
-  left_join(ices_stats, by = "ICESNAME")
-
 # ICES maps
-years_use <- defined_years
+
+years_use <- defined_years_chr
 
 ices_stats <- calc_ices_mean_sd(
   S$sf_list,
@@ -277,6 +266,9 @@ ices_stats <- calc_ices_mean_sd(
   S$wind,
   years_use = years_use
 )
+
+ices_plot <- S$ices_rect %>%
+  dplyr::left_join(ices_stats, by = "ICESNAME")
 
 p1 <- plot_base_map(
   ices_plot,
@@ -442,7 +434,7 @@ plot_fishing_with_wind(
 ices_hours <- calc_ices_mean_hours(
   S$sf_list,
   S$ices_rect,
-  years_use = defined_years
+  years_use = defined_years_chr
 )
 
 ices_hours_plot <- S$ices_rect %>%
@@ -453,9 +445,9 @@ plot_base_map(
   "MeanHours",
   paste0(
     "Average fishing hours (",
-    min(years_use),
+    min(defined_years_chr),
     "–",
-    max(years_use),
+    max(defined_years_chr),
     ")"
   ),
   ices_area = S$ices_area,
