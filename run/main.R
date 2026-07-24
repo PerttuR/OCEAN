@@ -52,7 +52,7 @@ N_SIM_SCENARIOS <- 2000
 N_SIM_SUBDIV    <- 1000 #5000 for final
 
 # Counterfactual configuration
-without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NO
+without_areas <- c()   #17 # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NUMBER
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
 
@@ -160,73 +160,108 @@ print(Sys.time())
 
 
 # =========================
-# 4. SCENARIOS (cached)
+# 4. MEAN FISHING SCENARIOS
 # =========================
 
-# ---------- ALL wind areas ----------
-
-scenario_file_all <- file.path(outPath, "scenario_results_all.rds")
-
-if (USE_CACHE && file.exists(scenario_file_all)) {
-
-  message("Loading scenarios (all wind areas)")
-  scenario_results_all <- readRDS(scenario_file_all)
-
-} else {
-
-  message("Running scenarios (all wind areas)")
-  scenario_results_all <- run_scenarios(S_all, n_sim = N_SIM_SCENARIOS)
-
-  saveRDS(scenario_results_all, scenario_file_all)
-}
-
-# ---------- WITHOUT selected areas ----------
-
-suffix <- if (length(without_areas) == 0) {
-  "none"
-} else {
-  paste(without_areas, collapse = "_")
-}
-
-scenario_file_drop <- file.path(
+scenario_file <- file.path(
   outPath,
-  paste0("scenario_results_without_", suffix, ".rds")
+  "scenario_results_mean_fishing.rds"
 )
 
-if (USE_CACHE && file.exists(scenario_file_drop)) {
+if (
+  USE_CACHE &&
+  file.exists(scenario_file)
+) {
 
-  message("Loading scenarios (without areas: ", suffix, ")")
-  scenario_results <- readRDS(scenario_file_drop)
+  message("Loading mean fishing scenarios")
+
+  scenario_results <- readRDS(
+    scenario_file
+  )
 
 } else {
 
-  message("Running scenarios (without areas: ", suffix, ")")
-  scenario_results <- run_scenarios(S, n_sim = N_SIM_SCENARIOS)
+  message("Running mean fishing scenarios")
 
-  saveRDS(scenario_results, scenario_file_drop)
+  scenario_results <- run_scenarios_mean_fishing(
+    S = S,
+    years_use = defined_years_chr,
+    n_sim = N_SIM_SCENARIOS,
+    shares = c(
+      0.25,
+      0.50,
+      0.75,
+      1.00
+    )
+  )
+
+  saveRDS(
+    scenario_results,
+    scenario_file
+  )
+
 }
 
-# CSV export
-export_scenarios(scenario_results, outPath)
-
-print("moving on to subdiv scenarios")
-print(Sys.time())
-
-# =========================
-# 4B. SUBDIVISION SCENARIOS (cached optional)
-# =========================
-
-subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
-
-write.table(
-  subdiv_results,
-  file.path(outPath, "scenario_subdivision.csv"),
-  sep = ",",
-  row.names = FALSE,
-  quote = FALSE
+scenario_summary <- summarise_scenarios_mean_fishing(
+  scenario_results
 )
 
-plot_subdivision_scenarios(subdiv_results)
+scenario_values <- scenario_values_mean_fishing(
+  scenario_results,
+  digits = 2
+)
+
+print(scenario_summary)
+
+print(scenario_values)
+
+write.csv(
+  scenario_summary,
+  file.path(
+    outPath,
+    "scenario_summary.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  scenario_values,
+  file.path(
+    outPath,
+    "scenario_values.csv"
+  ),
+  row.names = FALSE
+)
+
+plot_scenarios_mean_fishing(
+  scenario_results,
+  years_label = "Mean fishing distribution 2017–2025",
+  outPath = outPath
+)
+
+plot_scenarios_total_mean_fishing(
+  scenario_results,
+  years_label = "Mean fishing distribution 2017–2025",
+  outPath = outPath
+)
+
+
+
+# # =========================
+# # 4B. SUBDIVISION SCENARIOS (cached optional)
+# # =========================
+
+# subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
+
+# write.table(
+#   subdiv_results,
+#   file.path(outPath, "scenario_subdivision.csv"),
+#   sep = ",",
+#   row.names = FALSE,
+#   quote = FALSE
+# )
+
+# plot_subdivision_scenarios(subdiv_results)
 
 # =========================
 # 5. ICES DATASETS
@@ -320,10 +355,7 @@ plot_base_map(
 # 7. QA CHECKS
 # =========================
 
-run_all_checks(
-  S,
-  scenario_results = scenario_results
-)
+run_all_checks(S)
 
 # =========================
 # DONE
@@ -360,28 +392,6 @@ perc_cable_55 <- 100 * cable_hours_55 / total_hours
 perc_wind_55
 perc_cable_55
 
-## PLOTTING
-
-plot_total_with_without_wind_id(
-  res_all  = scenario_results_all,
-  res_drop = scenario_results,
-  wind_id  = paste(without_areas, collapse = ", ")
-)
-
-
-
-#### summaries ####
-
-plot_total_marginal_mean_years(scenario_results_all)
-plot_total_marginal_mean_years(scenario_results)
-
-#some scenarios
-plot_total_marginal(scenario_results_all)
-plot_components_count_marginal(scenario_results_all)
-
-## OR with data where areas are dropped
-plot_total_marginal(scenario_results)
-plot_components_count_marginal(scenario_results)
 
 
 #### Plot map of average fishing ####
@@ -458,7 +468,7 @@ plot_base_map(
 
 ### Some statistics
 
-source("run/calculate_similarity_years.R")
+# source("run/calculate_similarity_years.R")
 
 wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
   mean_csq = mean_csq_defined,
@@ -527,17 +537,3 @@ ggplot(
   )
 
 
-### Scenarioiden arvot
-
-scenario_results %>%
-  filter(
-    method == "area",
-    share %in% c(0.25, 0.50, 0.75)
-  ) %>%
-  group_by(share) %>%
-  summarise(
-    mean_impact = mean(mean_total, na.rm = TRUE),
-    min_impact = min(mean_total, na.rm = TRUE),
-    max_impact = max(mean_total, na.rm = TRUE),
-    .groups = "drop"
-  )
