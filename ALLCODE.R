@@ -54,7 +54,7 @@ N_SIM_SCENARIOS <- 2000
 N_SIM_SUBDIV    <- 1000 #5000 for final
 
 # Counterfactual configuration
-without_areas <- c(17)   # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NO
+without_areas <- c()   #17 # use c() so this can be extended later ##CHECK THAT THIS IS THE CORRECT NUMBER
 # without_areas <- c(55, 61, 72)
 # without_areas <- integer(0)  # means "no exclusions"
 
@@ -162,73 +162,108 @@ print(Sys.time())
 
 
 # =========================
-# 4. SCENARIOS (cached)
+# 4. MEAN FISHING SCENARIOS
 # =========================
 
-# ---------- ALL wind areas ----------
-
-scenario_file_all <- file.path(outPath, "scenario_results_all.rds")
-
-if (USE_CACHE && file.exists(scenario_file_all)) {
-
-  message("Loading scenarios (all wind areas)")
-  scenario_results_all <- readRDS(scenario_file_all)
-
-} else {
-
-  message("Running scenarios (all wind areas)")
-  scenario_results_all <- run_scenarios(S_all, n_sim = N_SIM_SCENARIOS)
-
-  saveRDS(scenario_results_all, scenario_file_all)
-}
-
-# ---------- WITHOUT selected areas ----------
-
-suffix <- if (length(without_areas) == 0) {
-  "none"
-} else {
-  paste(without_areas, collapse = "_")
-}
-
-scenario_file_drop <- file.path(
+scenario_file <- file.path(
   outPath,
-  paste0("scenario_results_without_", suffix, ".rds")
+  "scenario_results_mean_fishing.rds"
 )
 
-if (USE_CACHE && file.exists(scenario_file_drop)) {
+if (
+  USE_CACHE &&
+  file.exists(scenario_file)
+) {
 
-  message("Loading scenarios (without areas: ", suffix, ")")
-  scenario_results <- readRDS(scenario_file_drop)
+  message("Loading mean fishing scenarios")
+
+  scenario_results <- readRDS(
+    scenario_file
+  )
 
 } else {
 
-  message("Running scenarios (without areas: ", suffix, ")")
-  scenario_results <- run_scenarios(S, n_sim = N_SIM_SCENARIOS)
+  message("Running mean fishing scenarios")
 
-  saveRDS(scenario_results, scenario_file_drop)
+  scenario_results <- run_scenarios_mean_fishing(
+    S = S,
+    years_use = defined_years_chr,
+    n_sim = N_SIM_SCENARIOS,
+    shares = c(
+      0.25,
+      0.50,
+      0.75,
+      1.00
+    )
+  )
+
+  saveRDS(
+    scenario_results,
+    scenario_file
+  )
+
 }
 
-# CSV export
-export_scenarios(scenario_results, outPath)
-
-print("moving on to subdiv scenarios")
-print(Sys.time())
-
-# =========================
-# 4B. SUBDIVISION SCENARIOS (cached optional)
-# =========================
-
-subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
-
-write.table(
-  subdiv_results,
-  file.path(outPath, "scenario_subdivision.csv"),
-  sep = ",",
-  row.names = FALSE,
-  quote = FALSE
+scenario_summary <- summarise_scenarios_mean_fishing(
+  scenario_results
 )
 
-plot_subdivision_scenarios(subdiv_results)
+scenario_values <- scenario_values_mean_fishing(
+  scenario_results,
+  digits = 2
+)
+
+print(scenario_summary)
+
+print(scenario_values)
+
+write.csv(
+  scenario_summary,
+  file.path(
+    outPath,
+    "scenario_summary.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  scenario_values,
+  file.path(
+    outPath,
+    "scenario_values.csv"
+  ),
+  row.names = FALSE
+)
+
+plot_scenarios_mean_fishing(
+  scenario_results,
+  years_label = "Mean fishing distribution 2017–2025",
+  outPath = outPath
+)
+
+plot_scenarios_total_mean_fishing(
+  scenario_results,
+  years_label = "Mean fishing distribution 2017–2025",
+  outPath = outPath
+)
+
+
+
+# # =========================
+# # 4B. SUBDIVISION SCENARIOS (cached optional)
+# # =========================
+
+# subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
+
+# write.table(
+#   subdiv_results,
+#   file.path(outPath, "scenario_subdivision.csv"),
+#   sep = ",",
+#   row.names = FALSE,
+#   quote = FALSE
+# )
+
+# plot_subdivision_scenarios(subdiv_results)
 
 # =========================
 # 5. ICES DATASETS
@@ -322,10 +357,7 @@ plot_base_map(
 # 7. QA CHECKS
 # =========================
 
-run_all_checks(
-  S,
-  scenario_results = scenario_results
-)
+run_all_checks(S)
 
 # =========================
 # DONE
@@ -362,28 +394,6 @@ perc_cable_55 <- 100 * cable_hours_55 / total_hours
 perc_wind_55
 perc_cable_55
 
-## PLOTTING
-
-plot_total_with_without_wind_id(
-  res_all  = scenario_results_all,
-  res_drop = scenario_results,
-  wind_id  = paste(without_areas, collapse = ", ")
-)
-
-
-
-#### summaries ####
-
-plot_total_marginal_mean_years(scenario_results_all)
-plot_total_marginal_mean_years(scenario_results)
-
-#some scenarios
-plot_total_marginal(scenario_results_all)
-plot_components_count_marginal(scenario_results_all)
-
-## OR with data where areas are dropped
-plot_total_marginal(scenario_results)
-plot_components_count_marginal(scenario_results)
 
 
 #### Plot map of average fishing ####
@@ -460,7 +470,7 @@ plot_base_map(
 
 ### Some statistics
 
-source("run/calculate_similarity_years.R")
+# source("run/calculate_similarity_years.R")
 
 wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
   mean_csq = mean_csq_defined,
@@ -529,20 +539,6 @@ ggplot(
   )
 
 
-### Scenarioiden arvot
-
-scenario_results %>%
-  filter(
-    method == "area",
-    share %in% c(0.25, 0.50, 0.75)
-  ) %>%
-  group_by(share) %>%
-  summarise(
-    mean_impact = mean(mean_total, na.rm = TRUE),
-    min_impact = min(mean_total, na.rm = TRUE),
-    max_impact = max(mean_total, na.rm = TRUE),
-    .groups = "drop"
-  )
 
 ----- run/data_prepare.R -----
 prepare_data <- function(
@@ -1302,193 +1298,572 @@ compute_baseline <- function(S, year) {
 }
 
 ----- run/scenarios.R -----
+library(sf)
 library(dplyr)
 library(purrr)
-library(sf)
+library(tidyr)
+library(ggplot2)
 
-# =========================
-# CORE ENGINE
-# =========================
+# ============================================================
+# BUILD MEAN C-SQUARE FISHING MAP
+# ============================================================
+
+build_mean_csq <- function(
+    sf_list,
+    years_use
+) {
+
+  years_use <- as.character(years_use)
+
+  mean_csq <- purrr::map_dfr(years_use, function(y) {
+
+    if (!y %in% names(sf_list)) {
+      stop("Year ", y, " not found in S$sf_list.")
+    }
+
+    sf_list[[y]] %>%
+      dplyr::mutate(
+        Year = y,
+        geom_key = sf::st_as_text(sf::st_geometry(.))
+      ) %>%
+      sf::st_drop_geometry() %>%
+      dplyr::select(
+        Year,
+        geom_key,
+        FishingHours,
+        TotValue,
+        TotWeight
+      )
+
+  }) %>%
+    dplyr::group_by(geom_key) %>%
+    dplyr::summarise(
+      FishingHours = sum(FishingHours, na.rm = TRUE) / length(years_use),
+      TotValue     = sum(TotValue, na.rm = TRUE) / length(years_use),
+      TotWeight    = sum(TotWeight, na.rm = TRUE) / length(years_use),
+      .groups = "drop"
+    ) %>%
+    dplyr::mutate(
+      geometry = sf::st_as_sfc(geom_key, crs = 4326)
+    ) %>%
+    sf::st_as_sf() %>%
+    dplyr::select(-geom_key)
+
+  mean_csq
+}
+
+
+# ============================================================
+# OVERLAP CALCULATION
+# ============================================================
 
 compute_overlap_fast <- function(hours, wind_flag, cable_flag) {
 
-  total_hours <- sum(hours)
+  total_hours <- sum(hours, na.rm = TRUE)
 
-  if (total_hours == 0) {
-    return(c(wind = NA, cable = NA, total = NA))
+  if (is.na(total_hours) || total_hours == 0) {
+    return(c(wind = NA_real_, cable = NA_real_, total = NA_real_))
   }
 
-  wind_hours  <- sum(hours * wind_flag)
-  cable_hours <- sum(hours * cable_flag)
+  wind_flag <- as.logical(wind_flag)
+  cable_flag <- as.logical(cable_flag)
 
-  combined_flag  <- wind_flag | cable_flag
-  combined_hours <- sum(hours * combined_flag)
+  # Make cable impact disjoint from wind area impact
+  cable_only_flag <- cable_flag & !wind_flag
+
+  wind_hours  <- sum(hours[wind_flag], na.rm = TRUE)
+  cable_hours <- sum(hours[cable_only_flag], na.rm = TRUE)
 
   c(
-    wind  = 100 * wind_hours      / total_hours,
-    cable = 100 * cable_hours    / total_hours,
-    total = 100 * combined_hours / total_hours
+    wind  = 100 * wind_hours / total_hours,
+    cable = 100 * cable_hours / total_hours,
+    total = 100 * (wind_hours + cable_hours) / total_hours
   )
 }
 
-# =========================
-# MAIN SCENARIOS
-# =========================
 
-run_scenarios <- function(S, n_sim) {
+# ============================================================
+# SELECT WIND FARMS BY AREA SHARE
+# ============================================================
 
-  years  <- names(S$sf_list)
-  n_wind <- nrow(S$wind)
+select_wind_by_area <- function(
+    wind_area_tbl,
+    share
+) {
 
-  wind_area <- as.numeric(sf::st_area(S$wind_proj))
+  if (share >= 1) {
+    return(
+      list(
+        keep_ids = wind_area_tbl$wind_id,
+        selected_area_m2 = sum(wind_area_tbl$area_m2, na.rm = TRUE),
+        target_area_m2 = sum(wind_area_tbl$area_m2, na.rm = TRUE),
+        actual_share = 1
+      )
+    )
+  }
 
-  dplyr::bind_rows(
+  total_area <- sum(wind_area_tbl$area_m2, na.rm = TRUE)
+  target_area <- total_area * share
 
-    # =====================================================
-# COUNT SCENARIOS — NESTED / MARGINAL BUILD-OUT
-# WITH WIND + CABLE DECOMPOSITION
-# =====================================================
-purrr::map_dfr(years, function(Year) {
+  perm <- sample(seq_len(nrow(wind_area_tbl)))
 
-  csq   <- S$sf_list[[Year]]
-  hitsW <- S$wind_hits[[Year]]
-  hitsC <- S$cable_hits[[Year]]
-  hours <- csq$FishingHours
+  cum_area <- cumsum(wind_area_tbl$area_m2[perm])
 
-  # ---- build CSQ × WIND matrix
-  wind_mat <- lapply(hitsW, function(x) {
-    v <- logical(n_wind)
-    v[x] <- TRUE
-    v
+  # Pick the subset whose cumulative area is closest to target.
+  # This avoids systematically under-selecting area.
+  k <- which.min(abs(cum_area - target_area))
+
+  keep_rows <- perm[seq_len(k)]
+
+  selected_area <- sum(wind_area_tbl$area_m2[keep_rows], na.rm = TRUE)
+
+  list(
+    keep_ids = wind_area_tbl$wind_id[keep_rows],
+    selected_area_m2 = selected_area,
+    target_area_m2 = target_area,
+    actual_share = selected_area / total_area
+  )
+}
+
+
+# ============================================================
+# MAIN MEAN-FISHING SCENARIO ENGINE
+# ============================================================
+
+run_scenarios_mean_fishing <- function(
+    S,
+    years_use,
+    n_sim = 2000,
+    shares = c(0.25, 0.50, 0.75, 1.00),
+    crs_proj = 3067
+) {
+
+  message("Building mean fishing layer for scenario analysis")
+
+  mean_csq <- build_mean_csq(
+    sf_list = S$sf_list,
+    years_use = years_use
+  )
+
+  mean_csq_proj <- mean_csq %>%
+    sf::st_make_valid() %>%
+    sf::st_transform(crs_proj)
+
+  wind_proj <- S$wind %>%
+    sf::st_make_valid() %>%
+    sf::st_transform(crs_proj)
+
+  cable_proj <- S$cable_full %>%
+    sf::st_make_valid() %>%
+    sf::st_transform(crs_proj)
+
+  # --------------------------------------------------
+  # Wind area table
+  # --------------------------------------------------
+
+  wind_area_tbl <- wind_proj %>%
+    sf::st_drop_geometry() %>%
+    dplyr::select(wind_id, country) %>%
+    dplyr::mutate(
+      area_m2 = as.numeric(sf::st_area(wind_proj))
+    )
+
+  if (any(is.na(wind_area_tbl$wind_id))) {
+    stop("S$wind must contain a wind_id column.")
+  }
+
+  if (!"wind_id" %in% names(cable_proj)) {
+    stop("S$cable_full must contain a wind_id column.")
+  }
+
+  # Keep only cable corridors linked to available wind IDs
+  cable_proj <- cable_proj %>%
+    dplyr::filter(wind_id %in% wind_area_tbl$wind_id)
+
+  # --------------------------------------------------
+  # Precompute intersections as wind_id lists
+  # --------------------------------------------------
+
+  message("Precomputing intersections for mean fishing layer")
+
+  hits_wind_idx <- sf::st_intersects(mean_csq_proj, wind_proj)
+
+  wind_hits_ids <- lapply(hits_wind_idx, function(i) {
+    wind_proj$wind_id[i]
   })
-  wind_mat <- do.call(rbind, wind_mat)
 
-  # ---- build CSQ × CABLE matrix (PER WIND FARM)
-  cable_mat <- lapply(hitsC, function(x) {
-    v <- logical(n_wind)
-    v[x] <- TRUE
-    v
+  hits_cable_idx <- sf::st_intersects(mean_csq_proj, cable_proj)
+
+  cable_hits_ids <- lapply(hits_cable_idx, function(i) {
+    cable_proj$wind_id[i]
   })
-  cable_mat <- do.call(rbind, cable_mat)
 
-  sim_list <- replicate(n_sim, {
+  hours <- mean_csq_proj$FishingHours
 
-    perm <- sample(seq_len(n_wind))
+  total_hours <- sum(hours, na.rm = TRUE)
 
-    wind_cum  <- matrix(FALSE, nrow = nrow(wind_mat),  ncol = n_wind)
-    cable_cum <- matrix(FALSE, nrow = nrow(cable_mat), ncol = n_wind)
+  if (is.na(total_hours) || total_hours == 0) {
+    stop("Total FishingHours in mean_csq is zero or NA.")
+  }
 
-    wind_cum[, 1]  <- wind_mat[,  perm[1]]
-    cable_cum[, 1] <- cable_mat[, perm[1]]
+  # --------------------------------------------------
+  # Run simulations
+  # --------------------------------------------------
 
-    if (n_wind > 1) {
-      for (k in 2:n_wind) {
-        wind_cum[,  k] <- wind_cum[,  k - 1] | wind_mat[,  perm[k]]
-        cable_cum[, k] <- cable_cum[, k - 1] | cable_mat[, perm[k]]
-      }
-    }
+  message("Running mean-fishing scenarios")
 
-    sapply(seq_len(n_wind), function(k) {
+  scenario_results <- purrr::map_dfr(shares, function(share_i) {
 
-      wind_flag  <- wind_cum[,  k]
-      cable_flag <- cable_cum[, k]
+    purrr::map_dfr(seq_len(n_sim), function(sim_i) {
 
-      # enforce disjointness explicitly
-      cable_flag <- cable_flag & !wind_flag
+      selected <- select_wind_by_area(
+        wind_area_tbl = wind_area_tbl,
+        share = share_i
+      )
 
-      total_hours <- sum(hours)
+      keep_ids <- selected$keep_ids
 
-      wind_hours  <- sum(hours * wind_flag)
-      cable_hours <- sum(hours * cable_flag)
+      wind_flag <- vapply(
+        wind_hits_ids,
+        function(x) any(x %in% keep_ids),
+        logical(1)
+      )
 
-      c(
-        wind  = 100 * wind_hours  / total_hours,
-        cable = 100 * cable_hours / total_hours,
-        total = 100 * (wind_hours + cable_hours) / total_hours
+      cable_flag <- vapply(
+        cable_hits_ids,
+        function(x) any(x %in% keep_ids),
+        logical(1)
+      )
+
+      res <- compute_overlap_fast(
+        hours = hours,
+        wind_flag = wind_flag,
+        cable_flag = cable_flag
+      )
+
+      tibble::tibble(
+        sim_id = sim_i,
+        method = "mean_fishing_area",
+        share = share_i,
+        target_area_share = share_i,
+        actual_area_share = selected$actual_share,
+        n_wind_select = length(keep_ids),
+        selected_area_m2 = selected$selected_area_m2,
+        target_area_m2 = selected$target_area_m2,
+        wind = unname(res["wind"]),
+        cable = unname(res["cable"]),
+        total = unname(res["total"])
       )
     })
-  }, simplify = FALSE)
+  })
 
-  sims <- array(
-    unlist(sim_list),
-    dim = c(3, n_wind, n_sim),
-    dimnames = list(c("wind", "cable", "total"), NULL, NULL)
-  )
+  attr(scenario_results, "years_use") <- as.character(years_use)
 
-  data.frame(
-    Year = rep(Year, n_wind),
-    method = rep("count", n_wind),
-    n_wind_select = seq_len(n_wind),
-    share = NA_real_,
+  scenario_results
+}
 
-    median_wind  = apply(sims["wind",  , ], 1, median, na.rm = TRUE),
-    median_cable = apply(sims["cable", , ], 1, median, na.rm = TRUE),
-    median_total = apply(sims["total", , ], 1, median, na.rm = TRUE),
 
-    min_total = apply(sims["total", , ], 1, min, na.rm = TRUE),
-    max_total = apply(sims["total", , ], 1, max, na.rm = TRUE)
-  )
-})
-  ,
+# ============================================================
+# SUMMARY TABLE
+# ============================================================
 
-    # =====================================================
-    # AREA SCENARIOS — UNCHANGED
-    # =====================================================
+summarise_scenarios_mean_fishing <- function(
+    scenario_results
+) {
 
-    expand.grid(
-      Year = years,
-      method = "area",
-      share = c(0.25, 0.5, 0.75, 1),
-      n_wind_select = NA_integer_,
-      stringsAsFactors = FALSE
+  scenario_results %>%
+    dplyr::group_by(share) %>%
+    dplyr::summarise(
+      n_sim = dplyr::n(),
+
+      mean_wind  = mean(wind, na.rm = TRUE),
+      mean_cable = mean(cable, na.rm = TRUE),
+      mean_total = mean(total, na.rm = TRUE),
+
+      q025_total = quantile(total, 0.025, na.rm = TRUE),
+      q975_total = quantile(total, 0.975, na.rm = TRUE),
+
+      min_total = min(total, na.rm = TRUE),
+      max_total = max(total, na.rm = TRUE),
+
+      mean_actual_area_share = mean(actual_area_share, na.rm = TRUE),
+      mean_n_wind_select = mean(n_wind_select, na.rm = TRUE),
+
+      .groups = "drop"
     ) %>%
-      purrr::pmap_dfr(function(Year, method, share, n_wind_select) {
+    dplyr::mutate(
+      scenario = paste0(share * 100, "%")
+    ) %>%
+    dplyr::select(
+      scenario,
+      share,
+      mean_actual_area_share,
+      mean_n_wind_select,
+      mean_wind,
+      mean_cable,
+      mean_total,
+      q025_total,
+      q975_total,
+      min_total,
+      max_total
+    )
+}
 
-        csq   <- S$sf_list[[Year]]
-        hitsW <- S$wind_hits[[Year]]
-        hitsC <- S$cable_hits[[Year]]
-        hours <- csq$FishingHours
 
-        sims <- replicate(n_sim, {
+# ============================================================
+# VALUES FOR MANUSCRIPT
+# ============================================================
 
-          target <- sum(wind_area) * share
-          perm   <- sample(seq_along(wind_area))
-          keep   <- perm[cumsum(wind_area[perm]) <= target]
+scenario_values_mean_fishing <- function(
+    scenario_results,
+    digits = 2
+) {
 
-          if (length(keep) == 0) {
-            keep <- perm[
-              which.min(abs(cumsum(wind_area[perm]) - target))
-            ]
-          }
+  summarise_scenarios_mean_fishing(scenario_results) %>%
+    dplyr::transmute(
+      scenario,
+      wind_impact = round(mean_wind, digits),
+      cable_impact = round(mean_cable, digits),
+      total_impact = round(mean_total, digits)
+    )
+}
 
-          wind_flag <- vapply(
-            hitsW,
-            function(x) any(x %in% keep),
-            logical(1)
-          )
 
-          cable_flag <- lengths(hitsC) > 0 &
-            vapply(seq_along(hitsC), function(i) {
-              any(hitsC[[i]] %in% keep)
-            }, logical(1))
+# ============================================================
+# PLOT: WIND, CABLE, TOTAL WITH SIMULATION VARIATION
+# ============================================================
+plot_scenarios_mean_fishing <- function(
+    scenario_results,
+    years_label = NULL,
+    outPath = NULL,
+    file_name = "scenario_mean_fishing_area.png"
+) {
 
-          compute_overlap_fast(hours, wind_flag, cable_flag)
-        })
+  scenario_long <- scenario_results %>%
+    dplyr::select(
+      sim_id,
+      share,
+      wind,
+      cable,
+      total
+    ) %>%
+    tidyr::pivot_longer(
+      cols = c(wind, cable, total),
+      names_to = "component",
+      values_to = "impact"
+    ) %>%
+    dplyr::mutate(
+      component = dplyr::recode(
+        component,
+        wind  = "Wind areas",
+        cable = "Cable corridors",
+        total = "Total"
+      )
+    )
 
-        data.frame(
-          Year = Year,
-          method = "area",
-          share = share,
-          n_wind_select = NA_integer_,
-          mean_wind  = mean(sims["wind", ], na.rm = TRUE),
-          mean_cable = mean(sims["cable", ], na.rm = TRUE),
-          mean_total = mean(sims["total", ], na.rm = TRUE),
-          min_total  = min(sims["total", ], na.rm = TRUE),
-          median_total = NA_real_,
-          max_total  = max(sims["total", ], na.rm = TRUE)
-        )
-      })
-  )
+  scenario_summary <- scenario_long %>%
+    dplyr::group_by(
+      share,
+      component
+    ) %>%
+    dplyr::summarise(
+      mean_impact = mean(impact, na.rm = TRUE),
+      q025 = quantile(impact, 0.025, na.rm = TRUE),
+      q975 = quantile(impact, 0.975, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  p <- ggplot() +
+
+    # geom_point(
+    #   data = scenario_long,
+    #   aes(
+    #     x = share * 100,
+    #     y = impact,
+    #     colour = component
+    #   ),
+    #   alpha = 0.15,
+    #   size = 1,
+    #   position = position_jitter(
+    #     width = 1,
+    #     height = 0
+    #   )
+    # ) +
+
+    geom_ribbon(
+      data = scenario_summary,
+      aes(
+        x = share * 100,
+        ymin = q025,
+        ymax = q975,
+        fill = component
+      ),
+      alpha = 0.15,
+      colour = NA
+    ) +
+
+    geom_line(
+      data = scenario_summary,
+      aes(
+        x = share * 100,
+        y = mean_impact,
+        colour = component
+      ),
+      linewidth = 1
+    ) +
+
+    geom_point(
+      data = scenario_summary,
+      aes(
+        x = share * 100,
+        y = mean_impact,
+        colour = component
+      ),
+      size = 3
+    ) +
+
+    scale_x_continuous(
+      breaks = c(25, 50, 75, 100),
+      labels = c(
+        "25%",
+        "50%",
+        "75%",
+        "100%"
+      )
+    ) +
+
+    theme_minimal() +
+
+    labs(
+      x = "Realized wind farm footprint",
+      y = "Fishing activity affected (%)",
+      colour = NULL,
+      fill = NULL,
+      title = "Fishing impact under offshore wind development scenarios",
+      subtitle = years_label
+    ) +
+
+    theme(
+      legend.position = "top",
+      panel.grid.minor = element_blank()
+    )
+
+  print(p)
+
+  if (!is.null(outPath)) {
+
+    ggsave(
+      file.path(
+        outPath,
+        file_name
+      ),
+      p,
+      width = 8,
+      height = 6,
+      dpi = 300
+    )
+
+  }
+
+  invisible(p)
+
+}
+
+#----------------------------
+### PLOT SCENARIOS
+#---------------------------
+
+
+plot_scenarios_total_mean_fishing <- function(
+    scenario_results,
+    years_label = NULL,
+    outPath = NULL,
+    file_name = "scenario_total_mean_fishing_area.png"
+) {
+
+  scenario_summary <- scenario_results %>%
+    dplyr::group_by(share) %>%
+    dplyr::summarise(
+      mean_total = mean(total, na.rm = TRUE),
+      q025_total = quantile(total, 0.025, na.rm = TRUE),
+      q975_total = quantile(total, 0.975, na.rm = TRUE),
+      .groups = "drop"
+    )
+
+  p <- ggplot() +
+
+    geom_point(
+      data = scenario_results,
+      aes(
+        x = share * 100,
+        y = total
+      ),
+      alpha = 0.20,
+      size = 1.2,
+      position = position_jitter(
+        width = 1,
+        height = 0
+      )
+    ) +
+
+    geom_ribbon(
+      data = scenario_summary,
+      aes(
+        x = share * 100,
+        ymin = q025_total,
+        ymax = q975_total
+      ),
+      fill = "grey70",
+      alpha = 0.30
+    ) +
+
+    geom_line(
+      data = scenario_summary,
+      aes(
+        x = share * 100,
+        y = mean_total
+      ),
+      linewidth = 1,
+      colour = "black"
+    ) +
+
+    geom_point(
+      data = scenario_summary,
+      aes(
+        x = share * 100,
+        y = mean_total
+      ),
+      size = 3,
+      colour = "black"
+    ) +
+
+    scale_x_continuous(
+      breaks = c(25,50,75,100),
+      labels = c("25%","50%","75%","100%")
+    ) +
+
+    theme_minimal() +
+
+    labs(
+      x = "Realized wind farm footprint",
+      y = "Fishing activity affected (%)",
+      title = "Total fishing impact under offshore wind development scenarios",
+      subtitle = years_label
+    )
+
+  print(p)
+
+  if (!is.null(outPath)) {
+    ggsave(
+      file.path(outPath, file_name),
+      p,
+      width = 8,
+      height = 6,
+      dpi = 300
+    )
+  }
+
+  invisible(p)
 }
 
 ----- run/plot.R -----

@@ -537,3 +537,16 @@ ggplot(
   )
 
 
+
+### Note that there is some overlap in areas. It is 1.6 %
+
+wind_union <- st_union(S$wind)
+
+sum_area <- as.numeric(sum(st_area(S$wind)))
+union_area <- as.numeric(st_area(wind_union))
+
+data.frame(
+  sum_area_km2 = sum_area / 1e6,
+  union_area_km2 = union_area / 1e6,
+  overlap_pct = 100 * (sum_area - union_area) / sum_area
+)
