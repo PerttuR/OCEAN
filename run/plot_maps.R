@@ -43,7 +43,13 @@ plot_base_map <- function(data_sf, fill_var, title,
 
 #fishing intensity + wind
 
-plot_fishing_with_wind <- function(csq_year, wind, cable = NULL, baltic) {
+plot_fishing_with_wind <- function(
+    csq_year,
+    wind,
+    cable = NULL,
+    baltic,
+    ices_area = NULL
+) {
 wind$Layer <- "Wind area"
 
 
@@ -103,8 +109,47 @@ if (!is.null(cable)) {
     )
 }
 
-#Add land
-  p <- p + plot_base_layers(baltic)
+# Add land
+p <- p + plot_base_layers(baltic)
+
+# Add subdivision guide lines
+
+lat_lines <- sf::st_as_sf(
+  data.frame(
+    id = c("63.5", "60.5"),
+    geometry = sf::st_sfc(
+
+      sf::st_linestring(matrix(
+        c(
+          17, 63.5,
+          23, 63.5
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )),
+
+      sf::st_linestring(matrix(
+        c(
+          17, 60.5,
+          22, 60.5
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )),
+
+      crs = 4326
+    )
+  )
+)
+
+p <- p +
+  geom_sf(
+    data = lat_lines,
+    colour = "black",
+    linetype = "dashed",
+    linewidth = 0.6
+  )
+  
 #final settings
   p <- p +
     coord_sf(

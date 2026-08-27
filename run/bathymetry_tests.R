@@ -7,6 +7,7 @@ library(terra)
 library(tidyterra)
 library(patchwork)
 library(sf)
+library(ggspatial)
 
 #### GEBCO 2+26 GLobal dataset
 #GEBCO Compilation Group (2026) GEBCO 2026 Grid (doi: 10.5285/4f68d5c7-45eb-f999-e063-7086abc036fa)
@@ -297,7 +298,95 @@ depth_compare <- dplyr::bind_rows(
     )
   )
 
+# --------------------------------------------------
+# Bathymetry map
+# --------------------------------------------------
+# subdivision guide lines
 
+lat_lines <- sf::st_as_sf(
+  data.frame(
+    id = c("63.5", "60.5"),
+    geometry = sf::st_sfc(
+
+      sf::st_linestring(matrix(
+        c(
+          17, 63.5,
+          23, 63.5
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )),
+
+      sf::st_linestring(matrix(
+        c(
+          17, 60.5,
+          22, 60.5
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )),
+
+      crs = 4326
+    )
+  )
+)
+
+p_depth_map <- ggplot() +
+
+  tidyterra::geom_spatraster(
+    data = depth_study
+  ) +
+
+  scale_fill_viridis_c(
+    option = "viridis",
+    direction = -1,
+    name = "Depth (m)"
+  ) +
+
+  # geom_sf(
+  #   data = S$wind,
+  #   fill = NA,
+  #   colour = "white",
+  #   linewidth = 0.7
+  # ) +
+  
+  geom_sf(
+  data = S$wind,
+  fill = NA,
+  colour = "white",
+  linewidth = 0.5
+) +
+
+geom_sf(
+  data = lat_lines,
+  colour = "black",
+  linetype = "dashed",
+  linewidth = 0.6
+) +
+
+    geom_sf(
+    data = S$coast,
+    fill = "grey75",
+    colour = "grey50",
+    linewidth = 0.2
+  ) +
+
+  coord_sf(
+    xlim = c(17, 26),
+    ylim = c(60, 66),
+    expand = FALSE
+  ) +
+base_map() +
+
+add_map_decorations() +
+
+labs(
+  title = "Bathymetry and wind areas"
+) +
+
+theme(
+  legend.key.height = unit(2, "cm")
+)
 
 ### PLOT
 

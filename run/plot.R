@@ -313,7 +313,6 @@ plot_components_count_marginal_mean_years <- function(res, outPath = "out") {
 
 
 #Preparation of data 
-
 calc_wind_cable_overlap_from_mean_fishing <- function(
     mean_csq,
     wind,
@@ -329,6 +328,30 @@ calc_wind_cable_overlap_from_mean_fishing <- function(
   cable_p <- cable_full %>%
     sf::st_transform(3067)
 
+  # --------------------------------------------------
+  # Assign each wind area to SD30 or SD31
+  # --------------------------------------------------
+
+  subdiv_sf <- S$ices_area %>%
+    dplyr::filter(SubDivisio %in% c(30, 31)) %>%
+    sf::st_transform(3067)
+
+  wind_cent <- wind_p %>%
+    sf::st_centroid()
+
+  mat <- sf::st_within(
+    wind_cent,
+    subdiv_sf
+  )
+
+  wind_p$SubDivisio <- sapply(
+    mat,
+    function(x) {
+      if (length(x) == 0) return(NA)
+      subdiv_sf$SubDivisio[x[1]]
+    }
+  )
+
   total_hours <- sum(mean_csq_p$FishingHours, na.rm = TRUE)
 
   if (total_hours == 0) {
@@ -343,21 +366,33 @@ calc_wind_cable_overlap_from_mean_fishing <- function(
     cable_one <- cable_p %>%
       dplyr::filter(wind_id == wid)
 
-    wind_flag <- lengths(sf::st_intersects(mean_csq_p, wind_one)) > 0
+    wind_flag <- lengths(
+      sf::st_intersects(mean_csq_p, wind_one)
+    ) > 0
 
     if (nrow(cable_one) > 0) {
-      cable_flag <- lengths(sf::st_intersects(mean_csq_p, cable_one)) > 0
+      cable_flag <- lengths(
+        sf::st_intersects(mean_csq_p, cable_one)
+      ) > 0
     } else {
       cable_flag <- rep(FALSE, nrow(mean_csq_p))
     }
 
     cable_only_flag <- cable_flag & !wind_flag
 
-    wind_hours <- sum(mean_csq_p$FishingHours[wind_flag], na.rm = TRUE)
-    cable_hours <- sum(mean_csq_p$FishingHours[cable_only_flag], na.rm = TRUE)
+    wind_hours <- sum(
+      mean_csq_p$FishingHours[wind_flag],
+      na.rm = TRUE
+    )
+
+    cable_hours <- sum(
+      mean_csq_p$FishingHours[cable_only_flag],
+      na.rm = TRUE
+    )
 
     tibble::tibble(
       wind_id = wid,
+      SubDivisio = wind_one$SubDivisio[1],
       country = wind_one$country[1],
       wind_perc = 100 * wind_hours / total_hours,
       cable_perc = 100 * cable_hours / total_hours,
@@ -367,17 +402,29 @@ calc_wind_cable_overlap_from_mean_fishing <- function(
 }
 
 ### plot it ###
-plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
+plot_wind_cable_overlap_bars <- function(
+    df,
+    outPath = "out"
+) {
 
   df_ranked <- df %>%
-    dplyr::arrange(dplyr::desc(total_perc)) %>%
+    dplyr::group_by(SubDivisio) %>%
+    dplyr::arrange(
+      dplyr::desc(total_perc),
+      .by_group = TRUE
+    ) %>%
     dplyr::mutate(
-      rank_id = dplyr::row_number(),
-      rank_id = factor(rank_id, levels = as.character(seq_len(dplyr::n())))
-    )
+      rank_number = dplyr::row_number(),
+      rank_id = factor(
+        rank_number,
+        levels = sort(unique(rank_number))
+      )
+    ) %>%
+    dplyr::ungroup()
 
   plot_df <- df_ranked %>%
     dplyr::select(
+      SubDivisio,
       rank_id,
       wind_id,
       country,
@@ -394,48 +441,59 @@ plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
       component = dplyr::recode(
         component,
         wind_perc = "Wind area",
-        cable_perc = "Cable"
+        cable_perc = "Cable corridor"
+      ),
+      subdivision_label = paste(
+        "ICES subdivision",
+        SubDivisio
       )
     )
 
   p <- ggplot(
-  plot_df,
-  aes(
-    x = rank_id,
-    y = perc,
-    fill = component
-  )
-) +
-  geom_col(width = 0.8) +
-  theme_minimal() +
-  labs(
-    x = "Wind area rank",
-    y = "% of average fishing hours",
-    fill = "Overlap",
-    title = "Fishing overlap by wind area and cable",
-    subtitle = "Bars are ranked from largest to smallest total overlap"
-  ) +
-  theme(
-    axis.text.x = element_text(
-      angle = 90,
-      vjust = 0.5,
-      hjust = 1
-    ),
-    legend.position = c(0.85, 0.85),
-    legend.background = element_rect(
-      fill = scales::alpha("white", 0.8),
-      colour = "grey70"
+    plot_df,
+    aes(
+      x = rank_id,
+      y = perc,
+      fill = component
     )
-  )
+  ) +
+    geom_col(width = 0.8) +
+    facet_wrap(
+      ~ subdivision_label,
+      scales = "free_x"
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Wind area rank within subdivision",
+      y = "% of average fishing hours",
+      fill = "Overlap",
+      title = "Fishing overlap by wind area and cable corridor",
+      subtitle = paste0(
+        "Wind areas ranked separately within each ICES subdivision"
+      )
+    ) +
+    theme(
+      axis.text.x = element_text(
+        angle = 90,
+        vjust = 0.5,
+        hjust = 1
+      ),
+      legend.position = "top",
+      panel.grid.minor = element_blank()
+    )
 
   print(p)
 
   ggsave(
-    file.path(outPath, "wind_cable_overlap_stacked_bars.png"),
+    file.path(
+      outPath,
+      "wind_cable_overlap_stacked_bars_by_subdivision.png"
+    ),
     plot = p,
-    width = 10,
-    height = 6
+    width = 11,
+    height = 6,
+    dpi = 300
   )
 
-  return(p)
+  invisible(p)
 }
