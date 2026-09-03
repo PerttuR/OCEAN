@@ -1,0 +1,2804 @@
+### Tee myös joku Table, että löytyikö kaikki alukset molemmista tauluista ja miten monta niitä oli. 
+
+
+# ============================================================
+# FISHING-HOUR MAPS BY PROFITABILITY CLASS
+#
+# Inputs:
+#   orig/Kannattavuusluokka.xlsx
+#   D$table1
+#
+# Matching:
+#   D$table1$VE_ID = kannattavuusluokka$alus
+#   D$table1$Year  = kannattavuusluokka$vuosi
+#
+# Outputs:
+#   p_kan_lk_1
+#   p_kan_lk_2
+#   out/fishing_hours_kan_lk_1.png
+#   out/fishing_hours_kan_lk_2.png
+# ============================================================
+
+
+# =========================
+# LIBRARIES
+# =========================
+
+library(readxl)
+library(dplyr)
+library(sf)
+library(csquares)
+library(ggplot2)
+library(ggnewscale)
+
+rm(filter)
+
+# =========================
+# 1. READ PROFITABILITY DATA
+# =========================
+
+kannattavuusluokka <- readxl::read_excel(
+  file.path(
+    "orig",
+    "Kannattavuusluokka.xlsx"
+  )
+) %>%
+  dplyr::transmute(
+    VE_ID = trimws(
+      as.character(alus)
+    ),
+    Year = as.integer(vuosi),
+    AER_SEGMENT = as.character(AER_SEGMENT),
+    kan_lk = as.integer(kan_lk)
+  ) %>%
+  dplyr::filter(
+    !is.na(VE_ID),
+    VE_ID != "",
+    !is.na(Year),
+    kan_lk %in% c(1, 2)
+  )
+
+
+# =========================
+# 2. CHECK DUPLICATE KEYS
+#
+# Each vessel-year should preferably have one kan_lk value.
+# Identical duplicate rows are removed.
+# Conflicting classifications stop the analysis.
+# =========================
+
+kan_lk_conflicts <- kannattavuusluokka %>%
+  dplyr::group_by(
+    VE_ID,
+    Year
+  ) %>%
+  dplyr::summarise(
+    n_rows = dplyr::n(),
+    n_classes = dplyr::n_distinct(
+      kan_lk,
+      na.rm = TRUE
+    ),
+    classes = paste(
+      sort(unique(kan_lk)),
+      collapse = ";"
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::filter(
+    n_classes > 1
+  )
+
+if (nrow(kan_lk_conflicts) > 0) {
+
+  print(kan_lk_conflicts)
+
+  stop(
+    "Some vessel-year combinations have more than one ",
+    "kan_lk value. Resolve these conflicts before continuing."
+  )
+}
+
+kannattavuusluokka <- kannattavuusluokka %>%
+  dplyr::distinct(
+    VE_ID,
+    Year,
+    .keep_all = TRUE
+  )
+
+
+# =========================
+# 3. PREPARE VMS DATA
+# =========================
+
+required_vms_columns <- c(
+  "VE_ID",
+  "Year",
+  "Csquare",
+  "FishingHour"
+)
+
+missing_vms_columns <- setdiff(
+  required_vms_columns,
+  names(D$table1)
+)
+
+if (length(missing_vms_columns) > 0) {
+
+  stop(
+    "The following required columns are missing from D$table1: ",
+    paste(
+      missing_vms_columns,
+      collapse = ", "
+    )
+  )
+}
+
+vms_for_kan_lk <- D$table1 %>%
+  dplyr::transmute(
+    VE_ID = trimws(
+      as.character(VE_ID)
+    ),
+    Year = as.integer(Year),
+    Csquare = as.character(Csquare),
+    FishingHour = as.numeric(FishingHour)
+  ) %>%
+  dplyr::filter(
+    !is.na(VE_ID),
+    VE_ID != "",
+    !is.na(Year),
+    !is.na(Csquare),
+    Csquare != "",
+    !is.na(FishingHour)
+  )
+
+
+# =========================
+# 4. MATCH VMS AND PROFITABILITY CLASSES
+# =========================
+
+vms_kan_lk <- vms_for_kan_lk %>%
+  dplyr::left_join(
+    kannattavuusluokka %>%
+      dplyr::select(
+        VE_ID,
+        Year,
+        kan_lk
+      ),
+    by = c(
+      "VE_ID",
+      "Year"
+    )
+  )
+
+
+# =========================
+# 5. MATCHING SUMMARY
+# =========================
+
+matching_summary <- vms_kan_lk %>%
+  dplyr::summarise(
+    n_vms_rows = dplyr::n(),
+
+    n_matched_rows = sum(
+      !is.na(kan_lk)
+    ),
+
+    n_unmatched_rows = sum(
+      is.na(kan_lk)
+    ),
+
+    matched_fishing_hours = sum(
+      FishingHour[!is.na(kan_lk)],
+      na.rm = TRUE
+    ),
+
+    unmatched_fishing_hours = sum(
+      FishingHour[is.na(kan_lk)],
+      na.rm = TRUE
+    ),
+
+    total_fishing_hours = sum(
+      FishingHour,
+      na.rm = TRUE
+    ),
+
+    matched_hours_percent = dplyr::if_else(
+      total_fishing_hours > 0,
+      100 *
+        matched_fishing_hours /
+        total_fishing_hours,
+      NA_real_
+    )
+  )
+
+cat("\n========================================\n")
+cat("PROFITABILITY-CLASS MATCHING SUMMARY\n")
+cat("========================================\n")
+
+print(matching_summary)
+
+
+# Vessel-year combinations without a profitability class
+
+unmatched_vessel_years <- vms_kan_lk %>%
+  dplyr::filter(
+    is.na(kan_lk)
+  ) %>%
+  dplyr::group_by(
+    VE_ID,
+    Year
+  ) %>%
+  dplyr::summarise(
+    FishingHours = sum(
+      FishingHour,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::arrange(
+    dplyr::desc(FishingHours)
+  )
+
+write.csv(
+  unmatched_vessel_years,
+  file.path(
+    outPath,
+    "unmatched_vessel_years_kannattavuusluokka.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# =========================
+# 6. CALCULATE MEAN ANNUAL PERCENTAGE OF FISHING HOURS
+#
+# Workflow:
+#   1. Sum fishing hours by year, class, and C-square.
+#   2. Calculate total annual fishing hours within each class.
+#   3. Express each C-square as a percentage of the annual
+#      total for that profitability class.
+#   4. Complete missing year-class-cell combinations with zero.
+#   5. Calculate the mean annual percentage for each C-square.
+#
+# Therefore, percentages sum to 100% within each profitability
+# class and year before averaging across years.
+# =========================
+
+years_kan_lk <- sort(
+  intersect(
+    unique(vms_kan_lk$Year),
+    unique(kannattavuusluokka$Year)
+  )
+)
+
+if (length(years_kan_lk) == 0) {
+  stop(
+    "No common years were found between D$table1 and ",
+    "Kannattavuusluokka.xlsx."
+  )
+}
+
+
+# --------------------------------------------------
+# Sum fishing hours by year, class, and C-square
+# --------------------------------------------------
+
+vms_kan_lk_year_cell <- vms_kan_lk %>%
+  dplyr::filter(
+    !is.na(kan_lk),
+    kan_lk %in% c(1, 2),
+    Year %in% years_kan_lk
+  ) %>%
+  dplyr::group_by(
+    Year,
+    kan_lk,
+    Csquare
+  ) %>%
+  dplyr::summarise(
+    FishingHours = sum(
+      FishingHour,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+
+# --------------------------------------------------
+# Calculate annual total hours within each class
+# --------------------------------------------------
+
+kan_lk_annual_totals <- vms_kan_lk_year_cell %>%
+  dplyr::group_by(
+    Year,
+    kan_lk
+  ) %>%
+  dplyr::summarise(
+    AnnualFishingHours = sum(
+      FishingHours,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+
+# --------------------------------------------------
+# Check that each class-year has positive fishing hours
+# --------------------------------------------------
+
+invalid_class_years <- kan_lk_annual_totals %>%
+  dplyr::filter(
+    !is.finite(AnnualFishingHours),
+    AnnualFishingHours <= 0
+  )
+
+if (nrow(invalid_class_years) > 0) {
+
+  print(invalid_class_years)
+
+  stop(
+    "One or more profitability class-year combinations have ",
+    "zero or invalid total fishing hours."
+  )
+}
+
+
+# --------------------------------------------------
+# Express each C-square as percentage of the annual
+# total fishing hours within its profitability class
+# --------------------------------------------------
+
+vms_kan_lk_year_cell <- vms_kan_lk_year_cell %>%
+  dplyr::left_join(
+    kan_lk_annual_totals,
+    by = c(
+      "Year",
+      "kan_lk"
+    )
+  ) %>%
+  dplyr::mutate(
+    FishingHoursPercent = 100 *
+      FishingHours /
+      AnnualFishingHours
+  )
+
+
+# --------------------------------------------------
+# All C-squares observed in either profitability class
+# --------------------------------------------------
+
+all_kan_lk_csquares <- sort(
+  unique(
+    vms_kan_lk_year_cell$Csquare
+  )
+)
+
+
+# --------------------------------------------------
+# Complete year x class x C-square combinations
+#
+# A missing class-year-cell combination means zero fishing
+# activity in that cell during that year.
+# --------------------------------------------------
+
+vms_kan_lk_complete <- tidyr::complete(
+  vms_kan_lk_year_cell,
+  Year = years_kan_lk,
+  kan_lk = c(1L, 2L),
+  Csquare = all_kan_lk_csquares,
+  fill = list(
+    FishingHours = 0,
+    FishingHoursPercent = 0
+  )
+)
+
+
+# --------------------------------------------------
+# Mean annual percentage by class and C-square
+# --------------------------------------------------
+
+kan_lk_mean_csquare <- vms_kan_lk_complete %>%
+  dplyr::group_by(
+    kan_lk,
+    Csquare
+  ) %>%
+  dplyr::summarise(
+    MeanAnnualPercent = mean(
+      FishingHoursPercent,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  ) %>%
+  dplyr::filter(
+    MeanAnnualPercent > 0
+  )
+
+
+# --------------------------------------------------
+# Confirm that mean percentages sum to approximately
+# 100% within each profitability class
+# --------------------------------------------------
+
+percentage_check <- kan_lk_mean_csquare %>%
+  dplyr::group_by(
+    kan_lk
+  ) %>%
+  dplyr::summarise(
+    sum_mean_annual_percent = sum(
+      MeanAnnualPercent,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+cat("\n========================================\n")
+cat("PERCENTAGE SUM CHECK BY PROFITABILITY CLASS\n")
+cat("========================================\n")
+
+print(percentage_check)
+
+# =========================
+# 7. CONVERT C-SQUARES TO SF
+# =========================
+
+kan_lk_sf <- csquares::as_csquares(
+  kan_lk_mean_csquare,
+  csquares = "Csquare"
+) %>%
+  sf::st_as_sf()
+
+class(kan_lk_sf) <- setdiff(
+  class(kan_lk_sf),
+  "csquares"
+)
+
+kan_lk_sf <- kan_lk_sf %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(4326)
+
+
+kan_lk_1_sf <- kan_lk_sf %>%
+  dplyr::filter(
+    kan_lk == 1
+  )
+
+kan_lk_2_sf <- kan_lk_sf %>%
+  dplyr::filter(
+    kan_lk == 2
+  )
+
+
+# =========================
+# 8. SUBDIVISION GUIDE LINES
+# =========================
+
+lat_lines <- sf::st_as_sf(
+  data.frame(
+    id = c(
+      "63.5",
+      "60.5"
+    ),
+    geometry = sf::st_sfc(
+
+      # SD30/SD31 separator used in the other maps
+      sf::st_linestring(
+        matrix(
+          c(
+            17, 63.5,
+            23, 63.5
+          ),
+          ncol = 2,
+          byrow = TRUE
+        )
+      ),
+
+      # Southern study-area guide line
+      sf::st_linestring(
+        matrix(
+          c(
+            17, 60.5,
+            22, 60.5
+          ),
+          ncol = 2,
+          byrow = TRUE
+        )
+      ),
+
+      crs = 4326
+    )
+  )
+)
+
+
+# =========================
+# 9. COMMON FILL SCALE
+#
+# A shared limit makes maps for classes 1 and 2 directly
+# comparable.
+# =========================
+
+kan_lk_fill_max <- max(
+  kan_lk_sf$MeanAnnualPercent,
+  na.rm = TRUE
+)
+
+if (
+  !is.finite(kan_lk_fill_max) ||
+  kan_lk_fill_max <= 0
+) {
+  stop(
+    "No positive mean annual fishing percentages were available for ",
+    "profitability classes 1 and 2."
+  )
+}
+
+
+# =========================
+# 10. MAP FUNCTION
+# =========================
+# =========================
+# 10. MAP FUNCTION
+#
+# value_column:
+#   Mean maps   = "MeanAnnualPercent"
+#   Yearly maps = "FishingHoursPercent"
+#
+# The function returns a plot but does not save it.
+# All maps are saved later into one multipage PDF.
+# =========================
+
+plot_kan_lk_fishing <- function(
+    fishing_sf,
+    class_number,
+    value_column,
+    legend_title,
+    wind,
+    cable,
+    coast,
+    lat_lines,
+    fill_max
+) {
+
+  # --------------------------------------------------
+  # Validate mapped column
+  # --------------------------------------------------
+
+  if (!value_column %in% names(fishing_sf)) {
+    stop(
+      "Column '",
+      value_column,
+      "' was not found in fishing_sf. Available columns: ",
+      paste(names(fishing_sf), collapse = ", ")
+    )
+  }
+
+  if (nrow(fishing_sf) == 0) {
+    warning(
+      "No fishing C-squares available for ",
+      class_number,
+      "."
+    )
+  }
+
+  wind_plot <- wind %>%
+    dplyr::mutate(
+      Layer = "Wind area"
+    )
+
+  cable_plot <- cable %>%
+    dplyr::mutate(
+      Layer = "Cable corridor"
+    )
+
+  p <- ggplot() +
+
+    # Fishing distribution
+    geom_sf(
+      data = fishing_sf,
+      aes(
+        fill = .data[[value_column]]
+      ),
+      colour = NA
+    ) +
+
+    scale_fill_viridis_c(
+      option = "inferno",
+      direction = -1,
+      limits = c(
+        0,
+        fill_max
+      ),
+      oob = scales::squish,
+      name = legend_title,
+      guide = guide_colourbar(
+        order = 1
+      )
+    ) +
+
+    # Wind area outlines
+    ggnewscale::new_scale_colour() +
+
+    geom_sf(
+      data = wind_plot,
+      aes(
+        colour = Layer
+      ),
+      fill = NA,
+      alpha = 0.8,
+      linewidth = 0.45
+    ) +
+
+    scale_colour_manual(
+      values = c(
+        "Wind area" = "#20262d"
+      ),
+      name = NULL,
+      guide = guide_legend(
+        order = 2
+      )
+    ) +
+
+    # Cable corridors
+    ggnewscale::new_scale_fill() +
+
+    geom_sf(
+      data = cable_plot,
+      aes(
+        fill = Layer
+      ),
+      colour = NA,
+      alpha = 0.4
+    ) +
+
+    scale_fill_manual(
+      values = c(
+        "Cable corridor" = "#5e3d60"
+      ),
+      name = NULL,
+      guide = guide_legend(
+        order = 3
+      )
+    ) +
+
+    # Subdivision guide lines
+    geom_sf(
+      data = lat_lines,
+      colour = "black",
+      linetype = "dashed",
+      linewidth = 0.6
+    ) +
+
+    # Land
+    plot_base_layers(
+      baltic = coast
+    ) +
+
+    coord_sf(
+      xlim = c(17, 26),
+      ylim = c(60, 66),
+      expand = FALSE
+    ) +
+
+    base_map() +
+
+    add_map_decorations() +
+
+    labs(
+      title = paste(
+        "Fishing distribution, profitability class",
+        class_number
+      )
+    )
+
+  return(p)
+}
+
+# =========================
+# 11. CREATE MEAN MAPS
+#
+# These maps show the mean annual percentage distribution
+# across all available years.
+# =========================
+
+p_kan_lk_1 <- plot_kan_lk_fishing(
+  fishing_sf = kan_lk_1_sf,
+  class_number = 1,
+  value_column = "MeanAnnualPercent",
+  legend_title = paste0(
+    "Mean annual share\n",
+    "of fishing hours (%)"
+  ),
+  wind = S$wind,
+  cable = S$cable_full,
+  coast = S$coast,
+  lat_lines = lat_lines,
+  fill_max = kan_lk_fill_max
+)
+
+p_kan_lk_2 <- plot_kan_lk_fishing(
+  fishing_sf = kan_lk_2_sf,
+  class_number = 2,
+  value_column = "MeanAnnualPercent",
+  legend_title = paste0(
+    "Mean annual share\n",
+    "of fishing hours (%)"
+  ),
+  wind = S$wind,
+  cable = S$cable_full,
+  coast = S$coast,
+  lat_lines = lat_lines,
+  fill_max = kan_lk_fill_max
+)
+
+
+# Combined mean page
+
+p_kan_lk_mean_combined <-
+  p_kan_lk_1 +
+  p_kan_lk_2 +
+  patchwork::plot_layout(
+    ncol = 2,
+    guides = "collect"
+  ) +
+  patchwork::plot_annotation(
+    title = paste0(
+      "Mean fishing distribution by profitability class, ",
+      min(years_kan_lk),
+      "–",
+      max(years_kan_lk)
+    )
+  ) &
+
+  theme(
+    legend.position = "bottom"
+  )
+
+print(p_kan_lk_mean_combined)
+
+
+
+# =========================
+# 13. EXPORT AGGREGATED DATA
+# =========================
+
+write.csv(
+  sf::st_drop_geometry(
+    kan_lk_sf
+  ),
+  file.path(
+    outPath,
+    "fishing_hours_by_kan_lk_csquare.csv"
+  ),
+  row.names = FALSE
+)
+
+# =========================
+# 14. PREPARE YEARLY SPATIAL DATA
+#
+# FishingHoursPercent is the percentage of each class's
+# total fishing hours in that particular year.
+# =========================
+
+kan_lk_year_sf <- vms_kan_lk_year_cell %>%
+  dplyr::filter(
+    FishingHours > 0,
+    FishingHoursPercent > 0
+  ) %>%
+  csquares::as_csquares(
+    csquares = "Csquare"
+  ) %>%
+  sf::st_as_sf()
+
+class(kan_lk_year_sf) <- setdiff(
+  class(kan_lk_year_sf),
+  "csquares"
+)
+
+kan_lk_year_sf <- kan_lk_year_sf %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(4326)
+
+
+# --------------------------------------------------
+# Shared scale across all yearly maps
+#
+# Using the same maximum allows direct comparison between
+# years and profitability classes.
+# --------------------------------------------------
+
+fill_max_yearly <- max(
+  kan_lk_year_sf$FishingHoursPercent,
+  na.rm = TRUE
+)
+
+if (
+  !is.finite(fill_max_yearly) ||
+  fill_max_yearly <= 0
+) {
+  stop(
+    "No positive yearly fishing-hour percentages were found."
+  )
+}
+
+
+years_available <- sort(
+  unique(
+    kan_lk_year_sf$Year
+  )
+)
+
+
+# =========================
+# 15. CREATE ONE MULTIPAGE PDF
+#
+# Page 1:
+#   Mean distribution across all years
+#
+# Following pages:
+#   One page per year, with profitability classes 1 and 2
+#   shown side by side.
+# =========================
+
+pdf_file <- file.path(
+  outPath,
+  "fishing_distribution_by_profitability_class.pdf"
+)
+
+grDevices::pdf(
+  file = pdf_file,
+  width = 14,
+  height = 7,
+  onefile = TRUE
+)
+
+
+# --------------------------------------------------
+# First page: mean annual distributions
+# --------------------------------------------------
+
+print(
+  p_kan_lk_mean_combined
+)
+
+
+# --------------------------------------------------
+# Following pages: one page for each year
+# --------------------------------------------------
+
+for (year_i in years_available) {
+
+  sf_1 <- kan_lk_year_sf %>%
+    dplyr::filter(
+      Year == year_i,
+      kan_lk == 1
+    )
+
+  sf_2 <- kan_lk_year_sf %>%
+    dplyr::filter(
+      Year == year_i,
+      kan_lk == 2
+    )
+
+
+  p1_year <- plot_kan_lk_fishing(
+    fishing_sf = sf_1,
+    class_number = 1,
+    value_column = "FishingHoursPercent",
+    legend_title = paste0(
+      "Share of annual\n",
+      "fishing hours (%)"
+    ),
+    wind = S$wind,
+    cable = S$cable_full,
+    coast = S$coast,
+    lat_lines = lat_lines,
+    fill_max = fill_max_yearly
+  )
+
+
+  p2_year <- plot_kan_lk_fishing(
+    fishing_sf = sf_2,
+    class_number = 2,
+    value_column = "FishingHoursPercent",
+    legend_title = paste0(
+      "Share of annual\n",
+      "fishing hours (%)"
+    ),
+    wind = S$wind,
+    cable = S$cable_full,
+    coast = S$coast,
+    lat_lines = lat_lines,
+    fill_max = fill_max_yearly
+  )
+
+
+  p_year_combined <-
+    p1_year +
+    p2_year +
+    patchwork::plot_layout(
+      ncol = 2,
+      guides = "collect"
+    ) +
+    patchwork::plot_annotation(
+      title = paste(
+        "Fishing distribution by profitability class,",
+        year_i
+      )
+    ) &
+
+    theme(
+      legend.position = "bottom"
+    )
+
+
+  print(
+    p_year_combined
+  )
+}
+
+
+grDevices::dev.off()
+
+message(
+  "Multipage PDF written to: ",
+  pdf_file
+)
+
+
+# =========================
+# VESSEL MATCHING AND CLASS COUNTS BY YEAR
+#
+# Counts are based on distinct VE_ID + Year combinations.
+#
+# The table reports:
+#   - all distinct VMS vessels in each year
+#   - vessels found in Kannattavuusluokka.xlsx
+#   - unmatched VMS vessels
+#   - class 1 vessels
+#   - class 2 vessels
+#   - percentage of VMS vessels matched
+# =========================
+
+
+# --------------------------------------------------
+# One row per VMS vessel and year
+# --------------------------------------------------
+
+vms_vessel_year <- vms_for_kan_lk %>%
+  dplyr::distinct(
+    Year,
+    VE_ID
+  )
+
+
+# --------------------------------------------------
+# Attach profitability class
+# --------------------------------------------------
+
+vessel_year_classes <- vms_vessel_year %>%
+  dplyr::left_join(
+    kannattavuusluokka %>%
+      dplyr::select(
+        VE_ID,
+        Year,
+        kan_lk
+      ),
+    by = c(
+      "VE_ID",
+      "Year"
+    )
+  )
+
+
+# --------------------------------------------------
+# Annual vessel matching and class summary
+# --------------------------------------------------
+
+vessel_class_summary_year <- vessel_year_classes %>%
+  dplyr::group_by(
+    Year
+  ) %>%
+  dplyr::summarise(
+    n_vms_vessels = dplyr::n_distinct(
+      VE_ID
+    ),
+
+    n_vessels_found = dplyr::n_distinct(
+      VE_ID[!is.na(kan_lk)]
+    ),
+
+    n_vessels_not_found = dplyr::n_distinct(
+      VE_ID[is.na(kan_lk)]
+    ),
+
+    n_class_1_vessels = dplyr::n_distinct(
+  VE_ID[!is.na(kan_lk) & kan_lk == 1]
+),
+
+n_class_2_vessels = dplyr::n_distinct(
+  VE_ID[!is.na(kan_lk) & kan_lk == 2]
+),
+
+    matched_vessels_percent = dplyr::if_else(
+      n_vms_vessels > 0,
+      100 *
+        n_vessels_found /
+        n_vms_vessels,
+      NA_real_
+    ),
+
+    all_vessels_found =
+      n_vessels_not_found == 0,
+
+    .groups = "drop"
+  ) %>%
+  dplyr::mutate(
+    matched_vessels_percent = round(
+      matched_vessels_percent,
+      1
+    )
+  ) %>%
+  dplyr::arrange(
+    Year
+  )
+
+
+# --------------------------------------------------
+# Overall vessel matching summary
+# --------------------------------------------------
+
+vessel_class_summary_total <- vessel_year_classes %>%
+  dplyr::summarise(
+    n_vessel_year_combinations = dplyr::n(),
+
+    n_vessel_years_found = sum(
+      !is.na(kan_lk)
+    ),
+
+    n_vessel_years_not_found = sum(
+      is.na(kan_lk)
+    ),
+
+    matched_vessel_years_percent = dplyr::if_else(
+      n_vessel_year_combinations > 0,
+      100 *
+        n_vessel_years_found /
+        n_vessel_year_combinations,
+      NA_real_
+    ),
+
+    all_vessel_years_found =
+      n_vessel_years_not_found == 0
+  ) %>%
+  dplyr::mutate(
+    matched_vessel_years_percent = round(
+      matched_vessel_years_percent,
+      1
+    )
+  )
+
+
+# --------------------------------------------------
+# Unmatched vessels by year
+# --------------------------------------------------
+
+unmatched_vessels_by_year <- vessel_year_classes %>%
+  dplyr::filter(
+    is.na(kan_lk)
+  ) %>%
+  dplyr::arrange(
+    Year,
+    VE_ID
+  )
+
+
+# --------------------------------------------------
+# Vessel-years present in kannattavuusluokka
+# but missing from VMS
+# --------------------------------------------------
+
+kan_vessel_year <- kannattavuusluokka %>%
+  distinct(
+    Year,
+    VE_ID,
+    kan_lk
+  )
+
+missing_from_vms <- kan_vessel_year %>%
+  anti_join(
+    vms_vessel_year,
+    by = c(
+      "Year",
+      "VE_ID"
+    )
+  ) %>%
+  arrange(
+    Year,
+    VE_ID
+  )
+
+cat("\n========================================\n")
+cat("VESSELS IN KANNATTAVUUSLUOKKA BUT NOT IN VMS\n")
+cat("========================================\n")
+
+print(
+  missing_from_vms,
+  n = Inf
+)
+
+write.csv(
+  missing_from_vms,
+  file.path(
+    outPath,
+    "vessels_in_kan_lk_but_not_in_vms.csv"
+  ),
+  row.names = FALSE
+)
+
+missing_from_vms_summary <- missing_from_vms %>%
+  dplyr::count(
+    Year,
+    kan_lk,
+    name = "n_missing_vessels"
+  ) %>%
+  dplyr::arrange(
+    Year,
+    kan_lk
+  )
+
+print(
+  tibble::as_tibble(missing_from_vms_summary),
+  n = Inf
+)
+
+missing_from_vms_summary_wide <- missing_from_vms %>%
+  dplyr::count(
+    Year,
+    kan_lk,
+    name = "n_missing_vessels"
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = kan_lk,
+    values_from = n_missing_vessels,
+    names_prefix = "n_class_",
+    values_fill = 0
+  ) %>%
+  dplyr::rename(
+    n_class_1_missing_from_vms = n_class_1,
+    n_class_2_missing_from_vms = n_class_2
+  ) %>%
+  dplyr::arrange(Year)
+
+print(
+  tibble::as_tibble(missing_from_vms_summary_wide),
+  n = Inf
+)
+
+
+# --------------------------------------------------
+# Print results
+# --------------------------------------------------
+
+cat("\n========================================\n")
+cat("VESSEL MATCHING AND CLASS COUNTS BY YEAR\n")
+cat("========================================\n")
+
+tibble::as_tibble(
+  vessel_class_summary_year
+) %>%
+  print(
+    n = Inf
+  )
+
+
+cat("\n========================================\n")
+cat("OVERALL VESSEL-YEAR MATCHING SUMMARY\n")
+cat("========================================\n")
+
+tibble::as_tibble(
+  vessel_class_summary_total
+) %>%
+  print(
+    n = Inf
+  )
+
+
+cat("\n========================================\n")
+cat("UNMATCHED VESSELS BY YEAR\n")
+cat("========================================\n")
+
+tibble::as_tibble(
+  unmatched_vessels_by_year
+) %>%
+  print(
+    n = Inf
+  )
+
+
+# --------------------------------------------------
+# Export tables
+# --------------------------------------------------
+
+write.csv(
+  vessel_class_summary_year,
+  file.path(
+    outPath,
+    "vessel_class_summary_by_year.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  vessel_class_summary_total,
+  file.path(
+    outPath,
+    "vessel_class_matching_summary_total.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  unmatched_vessels_by_year,
+  file.path(
+    outPath,
+    "unmatched_vessels_by_year.csv"
+  ),
+  row.names = FALSE
+)
+
+
+
+
+
+
+# ============================================================
+# SPATIAL SIMILARITY BETWEEN PROFITABILITY CLASSES
+#
+# Compares the annual percentage distributions of classes
+# 1 and 2 using cosine similarity.
+#
+# Values approaching 1 indicate similar spatial distributions.
+# ============================================================
+
+cosine_similarity <- function(x, y) {
+
+  denominator <- sqrt(
+    sum(x^2, na.rm = TRUE) *
+      sum(y^2, na.rm = TRUE)
+  )
+
+  if (
+    !is.finite(denominator) ||
+    denominator == 0
+  ) {
+    return(NA_real_)
+  }
+
+  sum(
+    x * y,
+    na.rm = TRUE
+  ) / denominator
+}
+
+
+kan_lk_similarity_year <- vms_kan_lk_complete %>%
+
+  dplyr::select(
+    Year,
+    kan_lk,
+    Csquare,
+    FishingHoursPercent
+  ) %>%
+
+  tidyr::pivot_wider(
+    names_from = kan_lk,
+    values_from = FishingHoursPercent,
+    names_prefix = "class_",
+    values_fill = 0
+  ) %>%
+
+  dplyr::group_by(
+    Year
+  ) %>%
+
+  dplyr::summarise(
+    cosine_similarity = cosine_similarity(
+      class_1,
+      class_2
+    ),
+    .groups = "drop"
+  ) %>%
+
+  dplyr::arrange(
+    Year
+  )
+
+
+cat("\n========================================\n")
+cat("SPATIAL SIMILARITY BETWEEN CLASSES\n")
+cat("========================================\n")
+
+print(
+  kan_lk_similarity_year,
+  n = Inf
+)
+
+
+
+
+
+############
+
+
+kan_lk_similarity_mean <- kan_lk_mean_csquare %>%
+
+  dplyr::select(
+    kan_lk,
+    Csquare,
+    MeanAnnualPercent
+  ) %>%
+
+  tidyr::pivot_wider(
+    names_from = kan_lk,
+    values_from = MeanAnnualPercent,
+    names_prefix = "class_",
+    values_fill = 0
+  ) %>%
+
+  dplyr::summarise(
+    cosine_similarity = cosine_similarity(
+      class_1,
+      class_2
+    )
+  )
+
+
+cat("\n========================================\n")
+cat("MEAN SPATIAL SIMILARITY BETWEEN CLASSES\n")
+cat("========================================\n")
+
+print(kan_lk_similarity_mean)
+
+
+
+########### wind and cable impact
+
+
+# ============================================================
+# WIND AND CABLE IMPACT BY PROFITABILITY CLASS AND YEAR
+#
+# Percentages are calculated against the total fishing hours
+# of the corresponding class and year.
+# ============================================================
+
+wind_proj_kan <- S$wind %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
+
+cable_proj_kan <- S$cable_full %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
+
+
+kan_lk_impact_year <- purrr::map_dfr(
+  years_available,
+  function(year_i) {
+
+    purrr::map_dfr(
+      c(1L, 2L),
+      function(class_i) {
+
+        fishing_sf <- kan_lk_year_sf %>%
+          dplyr::filter(
+            Year == year_i,
+            kan_lk == class_i
+          ) %>%
+          sf::st_transform(3067)
+
+        if (nrow(fishing_sf) == 0) {
+
+          return(
+            tibble::tibble(
+              Year = year_i,
+              kan_lk = class_i,
+              total_fishing_hours = 0,
+              wind_impact_percent = NA_real_,
+              cable_impact_percent = NA_real_,
+              total_impact_percent = NA_real_
+            )
+          )
+        }
+
+        wind_flag <- lengths(
+          sf::st_intersects(
+            fishing_sf,
+            wind_proj_kan
+          )
+        ) > 0
+
+        cable_flag <- lengths(
+          sf::st_intersects(
+            fishing_sf,
+            cable_proj_kan
+          )
+        ) > 0
+
+        cable_only_flag <- cable_flag & !wind_flag
+
+        total_hours <- sum(
+          fishing_sf$FishingHours,
+          na.rm = TRUE
+        )
+
+        wind_hours <- sum(
+          fishing_sf$FishingHours[wind_flag],
+          na.rm = TRUE
+        )
+
+        cable_hours <- sum(
+          fishing_sf$FishingHours[cable_only_flag],
+          na.rm = TRUE
+        )
+
+        tibble::tibble(
+          Year = year_i,
+          kan_lk = class_i,
+          total_fishing_hours = total_hours,
+
+          wind_impact_percent = dplyr::if_else(
+            total_hours > 0,
+            100 * wind_hours / total_hours,
+            NA_real_
+          ),
+
+          cable_impact_percent = dplyr::if_else(
+            total_hours > 0,
+            100 * cable_hours / total_hours,
+            NA_real_
+          ),
+
+          total_impact_percent = dplyr::if_else(
+            total_hours > 0,
+            100 *
+              (wind_hours + cable_hours) /
+              total_hours,
+            NA_real_
+          )
+        )
+      }
+    )
+  }
+)
+
+
+cat("\n========================================\n")
+cat("WIND AND CABLE IMPACT BY CLASS AND YEAR\n")
+cat("========================================\n")
+
+print(
+  kan_lk_impact_year,
+  n = Inf
+)
+
+
+### mean impact accross years
+
+
+kan_lk_impact_summary <- kan_lk_impact_year %>%
+
+  dplyr::group_by(
+    kan_lk
+  ) %>%
+
+  dplyr::summarise(
+    n_years = sum(
+      !is.na(total_impact_percent)
+    ),
+
+    mean_wind_impact_percent = mean(
+      wind_impact_percent,
+      na.rm = TRUE
+    ),
+
+    mean_cable_impact_percent = mean(
+      cable_impact_percent,
+      na.rm = TRUE
+    ),
+
+    mean_total_impact_percent = mean(
+      total_impact_percent,
+      na.rm = TRUE
+    ),
+
+    sd_total_impact_percent = stats::sd(
+      total_impact_percent,
+      na.rm = TRUE
+    ),
+
+    min_total_impact_percent = min(
+      total_impact_percent,
+      na.rm = TRUE
+    ),
+
+    max_total_impact_percent = max(
+      total_impact_percent,
+      na.rm = TRUE
+    ),
+
+    .groups = "drop"
+  ) %>%
+
+  dplyr::mutate(
+    dplyr::across(
+      where(is.numeric),
+      ~ round(.x, 2)
+    )
+  )
+
+
+cat("\n========================================\n")
+cat("MEAN IMPACT BY PROFITABILITY CLASS\n")
+cat("========================================\n")
+
+print(kan_lk_impact_summary)
+
+
+
+
+
+
+#####neighborhood stability
+
+
+# ============================================================
+# NEIGHBOURHOOD-RADIUS SIMILARITY BY PROFITABILITY CLASS
+#
+# For each profitability class and year:
+#   1. Fishing hours are expressed as proportions of the
+#      class-specific annual total.
+#   2. Proportions are smoothed using neighbouring C-squares
+#      within each selected radius.
+#   3. The smoothed spatial distribution is compared with the
+#      selected reference year using cosine similarity.
+#
+# The analysis therefore compares relative spatial
+# distributions, not absolute fishing hours.
+# ============================================================
+
+
+# =========================
+# LIBRARY
+# =========================
+
+library(spdep)
+
+
+# =========================
+# SETTINGS
+# =========================
+
+reference_year <- 2019
+
+radii_km <- c(
+  5,
+  10,
+  20,
+  30,
+  50,
+  75,
+  100
+)
+
+radii_m <- radii_km * 1000
+
+
+# =========================
+# 1. CHECK REFERENCE YEAR
+# =========================
+
+if (!reference_year %in% years_kan_lk) {
+  stop(
+    "Reference year ",
+    reference_year,
+    " is not available in years_kan_lk."
+  )
+}
+
+
+# =========================
+# 2. CREATE A COMMON C-SQUARE GEOMETRY
+#
+# Both classes and all years must use exactly the same
+# C-square rows and row ordering.
+# =========================
+
+similarity_csquares <- tibble::tibble(
+  Csquare = all_kan_lk_csquares
+) %>%
+  csquares::as_csquares(
+    csquares = "Csquare"
+  ) %>%
+  sf::st_as_sf()
+
+class(similarity_csquares) <- setdiff(
+  class(similarity_csquares),
+  "csquares"
+)
+
+similarity_csquares <- similarity_csquares %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
+
+
+# Use C-square centroids for neighbourhood distances
+
+similarity_centroids <- similarity_csquares %>%
+  sf::st_centroid()
+
+similarity_coordinates <- sf::st_coordinates(
+  similarity_centroids
+)
+
+
+# =========================
+# 3. BUILD CLASS-YEAR PROPORTION DATA
+#
+# vms_kan_lk_complete already contains zeros for missing
+# class-year-C-square combinations.
+#
+# Recalculate proportions here from FishingHours so the
+# similarity analysis is self-contained.
+# =========================
+
+kan_lk_similarity_long <- vms_kan_lk_complete %>%
+  dplyr::group_by(
+    Year,
+    kan_lk
+  ) %>%
+  dplyr::mutate(
+    AnnualFishingHours = sum(
+      FishingHours,
+      na.rm = TRUE
+    ),
+
+    FishingHoursProportion = dplyr::if_else(
+      AnnualFishingHours > 0,
+      FishingHours / AnnualFishingHours,
+      NA_real_
+    )
+  ) %>%
+  dplyr::ungroup() %>%
+  dplyr::select(
+    Year,
+    kan_lk,
+    Csquare,
+    FishingHoursProportion
+  )
+
+
+# =========================
+# 4. CHECK PROPORTION SUMS
+#
+# Each class-year distribution should sum to approximately 1.
+# =========================
+
+similarity_proportion_check <- kan_lk_similarity_long %>%
+  dplyr::group_by(
+    Year,
+    kan_lk
+  ) %>%
+  dplyr::summarise(
+    proportion_sum = sum(
+      FishingHoursProportion,
+      na.rm = TRUE
+    ),
+    .groups = "drop"
+  )
+
+cat("\n========================================\n")
+cat("SIMILARITY PROPORTION SUM CHECK\n")
+cat("========================================\n")
+
+print(similarity_proportion_check)
+
+
+invalid_proportion_sums <- similarity_proportion_check %>%
+  dplyr::filter(
+    !is.finite(proportion_sum) |
+      abs(proportion_sum - 1) > 1e-8
+  )
+
+if (nrow(invalid_proportion_sums) > 0) {
+
+  print(invalid_proportion_sums)
+
+  stop(
+    "One or more class-year fishing distributions do not ",
+    "sum to 1."
+  )
+}
+
+
+# =========================
+# 5. CREATE MATRICES FOR EACH PROFITABILITY CLASS
+#
+# Rows:
+#   C-squares
+#
+# Columns:
+#   Years
+# =========================
+
+create_class_proportion_matrix <- function(
+    class_number
+) {
+
+  class_wide <- kan_lk_similarity_long %>%
+    dplyr::filter(
+      kan_lk == class_number
+    ) %>%
+    dplyr::select(
+      Csquare,
+      Year,
+      FishingHoursProportion
+    ) %>%
+    tidyr::pivot_wider(
+      names_from = Year,
+      values_from = FishingHoursProportion,
+      values_fill = 0
+    ) %>%
+    dplyr::right_join(
+      tibble::tibble(
+        Csquare = all_kan_lk_csquares
+      ),
+      by = "Csquare"
+    ) %>%
+    dplyr::arrange(
+      match(
+        Csquare,
+        all_kan_lk_csquares
+      )
+    )
+
+  year_columns <- as.character(
+    years_kan_lk
+  )
+
+  missing_year_columns <- setdiff(
+    year_columns,
+    names(class_wide)
+  )
+
+  if (length(missing_year_columns) > 0) {
+    stop(
+      "Missing year columns for profitability class ",
+      class_number,
+      ": ",
+      paste(
+        missing_year_columns,
+        collapse = ", "
+      )
+    )
+  }
+
+  class_wide %>%
+    dplyr::mutate(
+      dplyr::across(
+        dplyr::all_of(year_columns),
+        ~ dplyr::coalesce(.x, 0)
+      )
+    ) %>%
+    dplyr::select(
+      Csquare,
+      dplyr::all_of(year_columns)
+    )
+}
+
+
+class_1_proportion_matrix <-
+  create_class_proportion_matrix(
+    class_number = 1
+  )
+
+class_2_proportion_matrix <-
+  create_class_proportion_matrix(
+    class_number = 2
+  )
+
+
+# =========================
+# 6. COSINE-SIMILARITY FUNCTION
+# =========================
+
+cosine_similarity <- function(
+    x,
+    y
+) {
+
+  numerator <- sum(
+    x * y,
+    na.rm = TRUE
+  )
+
+  denominator <- sqrt(
+    sum(
+      x^2,
+      na.rm = TRUE
+    ) *
+      sum(
+        y^2,
+        na.rm = TRUE
+      )
+  )
+
+  if (
+    !is.finite(denominator) ||
+    denominator == 0
+  ) {
+    return(NA_real_)
+  }
+
+  numerator / denominator
+}
+
+# =========================
+# 7. CALCULATE SIMILARITY AT ONE RADIUS
+# =========================
+
+calculate_similarity_at_radius <- function(
+    radius_m,
+    proportion_matrix,
+    class_number
+) {
+
+  # --------------------------------------------------
+  # Define neighbours within the selected radius
+  # --------------------------------------------------
+
+  neighbours <- spdep::dnearneigh(
+    similarity_coordinates,
+    d1 = 0,
+    d2 = radius_m
+  )
+
+  # --------------------------------------------------
+  # Create row-standardised neighbourhood weights
+  # --------------------------------------------------
+
+  neighbour_weights <- spdep::nb2listw(
+    neighbours,
+    style = "W",
+    zero.policy = TRUE
+  )
+
+  # --------------------------------------------------
+  # Function for neighbourhood smoothing
+  # --------------------------------------------------
+
+  smooth_distribution <- function(proportions) {
+
+    spdep::lag.listw(
+      neighbour_weights,
+      proportions,
+      zero.policy = TRUE
+    )
+  }
+
+  # --------------------------------------------------
+  # Smooth the reference-year distribution
+  # --------------------------------------------------
+
+  reference_column <- as.character(
+    reference_year
+  )
+
+  if (!reference_column %in% names(proportion_matrix)) {
+    stop(
+      "Reference year column ",
+      reference_column,
+      " was not found in the proportion matrix for class ",
+      class_number,
+      "."
+    )
+  }
+
+  reference_distribution <- smooth_distribution(
+    proportion_matrix[[reference_column]]
+  )
+
+  # --------------------------------------------------
+  # Compare every year with the reference year
+  # --------------------------------------------------
+
+  purrr::map_dfr(
+    years_kan_lk,
+    function(year_i) {
+
+      year_column <- as.character(
+        year_i
+      )
+
+      if (!year_column %in% names(proportion_matrix)) {
+        stop(
+          "Year column ",
+          year_column,
+          " was not found in the proportion matrix for class ",
+          class_number,
+          "."
+        )
+      }
+
+      annual_distribution <- smooth_distribution(
+        proportion_matrix[[year_column]]
+      )
+
+      tibble::tibble(
+        kan_lk = class_number,
+        radius_km = radius_m / 1000,
+        Year = year_i,
+        reference_year = reference_year,
+        cosine_similarity = cosine_similarity(
+          annual_distribution,
+          reference_distribution
+        )
+      )
+    }
+  )
+}
+
+# =========================
+# 8. RUN ALL RADII FOR BOTH CLASSES
+# =========================
+
+similarity_by_radius_class_1 <- purrr::map_dfr(
+  radii_m,
+  calculate_similarity_at_radius,
+  proportion_matrix = class_1_proportion_matrix,
+  class_number = 1
+)
+
+similarity_by_radius_class_2 <- purrr::map_dfr(
+  radii_m,
+  calculate_similarity_at_radius,
+  proportion_matrix = class_2_proportion_matrix,
+  class_number = 2
+)
+
+similarity_by_radius_kan_lk <- dplyr::bind_rows(
+  similarity_by_radius_class_1,
+  similarity_by_radius_class_2
+) %>%
+  dplyr::mutate(
+    profitability_class = paste(
+      "Profitability class",
+      kan_lk
+    )
+  ) %>%
+  dplyr::arrange(
+    kan_lk,
+    Year,
+    radius_km
+  )
+
+
+# =========================
+# 9. PRINT RESULTS
+# =========================
+
+cat("\n========================================\n")
+cat("NEIGHBOURHOOD-RADIUS SIMILARITY RESULTS\n")
+cat("========================================\n")
+
+print(similarity_by_radius_kan_lk)
+
+
+# =========================
+# 10. PLOT
+#
+# Each panel represents one profitability class.
+# Each line represents one year compared with the reference
+# year.
+# =========================
+
+p_similarity_kan_lk <- ggplot(
+  similarity_by_radius_kan_lk,
+  aes(
+    x = radius_km,
+    y = cosine_similarity,
+    colour = factor(Year),
+    group = Year
+  )
+) +
+  geom_line(
+    linewidth = 0.8
+  ) +
+  geom_point(
+    size = 1.8
+  ) +
+  facet_wrap(
+    ~ profitability_class,
+    ncol = 2
+  ) +
+  scale_x_continuous(
+    breaks = radii_km
+  ) +
+  coord_cartesian(
+    ylim = c(
+      0,
+      1
+    )
+  ) +
+  theme_minimal() +
+  labs(
+    x = "Neighbourhood radius (km)",
+    y = paste0(
+      "Cosine similarity with ",
+      reference_year
+    ),
+    colour = "Year",
+    title = paste0(
+      "Spatial stability of fishing distributions by ",
+      "profitability class"
+    ),
+    subtitle = paste0(
+      "Annual class-specific proportions of fishing hours; ",
+      "reference year = ",
+      reference_year
+    )
+  ) +
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+print(p_similarity_kan_lk)
+
+
+# =========================
+# 11. SAVE RESULTS
+# =========================
+
+write.csv(
+  similarity_by_radius_kan_lk,
+  file.path(
+    outPath,
+    "fishing_similarity_by_radius_profitability_class.csv"
+  ),
+  row.names = FALSE
+)
+
+ggsave(
+  filename = file.path(
+    outPath,
+    "fishing_similarity_by_radius_profitability_class.png"
+  ),
+  plot = p_similarity_kan_lk,
+  width = 12,
+  height = 6,
+  dpi = 300
+)
+
+#### Add one for together
+
+# ============================================================
+# NEIGHBOURHOOD-RADIUS SIMILARITY AGAINST CLASS 1 IN 2019
+#
+# Common reference:
+#   Profitability class 1 in 2019
+#
+# Comparisons:
+#   - class 1 in every year vs class 1 in 2019
+#   - class 2 in every year vs class 1 in 2019
+#
+# Plot appearance:
+#   - colour identifies year
+#   - line type identifies profitability class
+#   - point shape identifies profitability class
+# ============================================================
+
+
+# =========================
+# 1. COMMON REFERENCE SETTINGS
+# =========================
+
+common_reference_year <- 2019
+common_reference_class <- 2
+
+
+if (
+  !as.character(common_reference_year) %in%
+    names(class_1_proportion_matrix)
+) {
+  stop(
+    "Reference year ",
+    common_reference_year,
+    " was not found in the class 1 proportion matrix."
+  )
+}
+
+
+# =========================
+# 2. FUNCTION FOR ONE RADIUS
+# =========================
+
+calculate_similarity_to_class1_reference <- function(
+    radius_m
+) {
+
+  # --------------------------------------------------
+  # Define neighbours within the selected radius
+  # --------------------------------------------------
+
+  neighbours <- spdep::dnearneigh(
+    similarity_coordinates,
+    d1 = 0,
+    d2 = radius_m
+  )
+
+
+  # --------------------------------------------------
+  # Create row-standardised neighbourhood weights
+  # --------------------------------------------------
+
+  neighbour_weights <- spdep::nb2listw(
+    neighbours,
+    style = "W",
+    zero.policy = TRUE
+  )
+
+
+  # --------------------------------------------------
+  # Function for spatial smoothing
+  # --------------------------------------------------
+
+  smooth_distribution <- function(proportions) {
+
+    spdep::lag.listw(
+      neighbour_weights,
+      proportions,
+      zero.policy = TRUE
+    )
+  }
+
+
+  # --------------------------------------------------
+  # Common reference:
+  # class 1 distribution in 2019
+  # --------------------------------------------------
+
+reference_matrix <- switch(
+  as.character(common_reference_class),
+  "1" = class_1_proportion_matrix,
+  "2" = class_2_proportion_matrix,
+  stop(
+    "common_reference_class must be either 1 or 2."
+  )
+)
+
+reference_distribution <- smooth_distribution(
+  reference_matrix[
+    [as.character(common_reference_year)]
+  ]
+)
+
+
+  # --------------------------------------------------
+  # Compare class 1 distributions with class 1 in 2019
+  # --------------------------------------------------
+
+  similarity_class_1 <- purrr::map_dfr(
+    years_kan_lk,
+    function(year_i) {
+
+      year_column <- as.character(
+        year_i
+      )
+
+      annual_distribution <- smooth_distribution(
+        class_1_proportion_matrix[[year_column]]
+      )
+
+      tibble::tibble(
+        kan_lk = 1L,
+        radius_km = radius_m / 1000,
+        Year = year_i,
+        reference_year = common_reference_year,
+        reference_class = common_reference_class,
+        cosine_similarity = cosine_similarity(
+          annual_distribution,
+          reference_distribution
+        )
+      )
+    }
+  )
+
+
+  # --------------------------------------------------
+  # Compare class 2 distributions with class 1 in 2019
+  # --------------------------------------------------
+
+  similarity_class_2 <- purrr::map_dfr(
+    years_kan_lk,
+    function(year_i) {
+
+      year_column <- as.character(
+        year_i
+      )
+
+      annual_distribution <- smooth_distribution(
+        class_2_proportion_matrix[[year_column]]
+      )
+
+      tibble::tibble(
+        kan_lk = 2L,
+        radius_km = radius_m / 1000,
+        Year = year_i,
+        reference_year = common_reference_year,
+        reference_class = common_reference_class,
+        cosine_similarity = cosine_similarity(
+          annual_distribution,
+          reference_distribution
+        )
+      )
+    }
+  )
+
+
+  # --------------------------------------------------
+  # Combine class 1 and class 2 results
+  # --------------------------------------------------
+
+  dplyr::bind_rows(
+    similarity_class_1,
+    similarity_class_2
+  )
+}
+
+
+# =========================
+# 3. RUN ALL RADII
+# =========================
+
+similarity_to_class1_2019 <- purrr::map_dfr(
+  radii_m,
+  calculate_similarity_to_class1_reference
+) %>%
+  dplyr::mutate(
+    profitability_class = factor(
+      kan_lk,
+      levels = c(1, 2),
+      labels = c(
+        "Profitability class 1",
+        "Profitability class 2"
+      )
+    ),
+
+    Year = factor(
+      Year,
+      levels = sort(
+        unique(Year)
+      )
+    )
+  ) %>%
+  dplyr::arrange(
+    profitability_class,
+    Year,
+    radius_km
+  )
+
+
+# =========================
+# 4. PRINT RESULTS
+# =========================
+
+cat("\n========================================\n")
+cat("SIMILARITY TO PROFITABILITY CLASS 1 IN 2019\n")
+cat("========================================\n")
+
+print(
+  tibble::as_tibble(
+    similarity_to_class1_2019
+  ),
+  n = Inf
+)
+
+
+# =========================
+# 5. SANITY CHECK
+#
+# Class 1 in 2019 should equal 1 at every radius because
+# it is compared with itself.
+# =========================
+
+reference_check <- similarity_to_class1_2019 %>%
+  dplyr::filter(
+    kan_lk == common_reference_class,
+    as.integer(
+      as.character(Year)
+    ) == common_reference_year
+  ) %>%
+  dplyr::select(
+    radius_km,
+    cosine_similarity
+  )
+
+cat("\n========================================\n")
+cat("REFERENCE CHECK: CLASS 1 IN 2019\n")
+cat("========================================\n")
+
+print(reference_check)
+
+
+if (
+  any(
+    abs(
+      reference_check$cosine_similarity - 1
+    ) > 1e-8,
+    na.rm = TRUE
+  )
+) {
+  warning(
+    "Class 1 in 2019 does not have similarity 1 at every radius."
+  )
+}
+
+
+# =========================
+# 6. GRAPH
+#
+# Year:
+#   colour
+#
+# Profitability class:
+#   line type and point shape
+#
+# All lines share the same reference:
+#   profitability class 1 in 2019
+# =========================
+
+p_similarity_to_class1_2019 <- ggplot(
+  similarity_to_class1_2019,
+  aes(
+    x = radius_km,
+    y = cosine_similarity,
+    colour = Year,
+    linetype = profitability_class,
+    shape = profitability_class,
+    group = interaction(
+      Year,
+      profitability_class
+    )
+  )
+) +
+
+  geom_line(
+    linewidth = 0.8
+  ) +
+
+  geom_point(
+    size = 2
+  ) +
+
+  scale_x_continuous(
+    breaks = radii_km
+  ) +
+
+  scale_linetype_manual(
+    values = c(
+      "Profitability class 1" = "solid",
+      "Profitability class 2" = "dashed"
+    )
+  ) +
+
+  scale_shape_manual(
+    values = c(
+      "Profitability class 1" = 16,
+      "Profitability class 2" = 17
+    )
+  ) +
+
+  coord_cartesian(
+    ylim = c(
+      0,
+      1
+    )
+  ) +
+
+  theme_minimal() +
+
+  labs(
+    x = "Neighbourhood radius (km)",
+    y = paste0(
+      "Cosine similarity with class 1 in ",
+      common_reference_year
+    ),
+    colour = "Year",
+    linetype = "Profitability class",
+    shape = "Profitability class",
+    title = paste0(
+      "Spatial similarity to profitability class 1 in ",
+      common_reference_year
+    ),
+    subtitle = paste0(
+      "Solid lines and circles = class 1; ",
+      "dashed lines and triangles = class 2"
+    )
+  ) +
+
+  theme(
+    legend.position = "right",
+    panel.grid.minor = element_blank()
+  )
+
+
+print(
+  p_similarity_to_class1_2019
+)
+
+
+# =========================
+# 7. EXPORT RESULTS
+# =========================
+
+write.csv(
+  similarity_to_class1_2019,
+  file.path(
+    outPath,
+    "fishing_similarity_to_class1_2019_by_radius.csv"
+  ),
+  row.names = FALSE
+)
+
+
+ggsave(
+  filename = file.path(
+    outPath,
+    "fishing_similarity_to_class1_2019_by_radius.png"
+  ),
+  plot = p_similarity_to_class1_2019,
+  width = 12,
+  height = 7,
+  dpi = 300
+)
+
+
+### as a table
+
+# ============================================================
+# SIMILARITY TABLE USING CLASS 1 IN 2019 AS COMMON REFERENCE
+#
+# Every class-year distribution is compared with:
+#   Profitability class 1 in 2019
+#
+# Comparisons include:
+#   Class 1, all years versus Class 1 in 2019
+#   Class 2, all years versus Class 1 in 2019
+#
+# Input values are annual class-specific proportions of
+# fishing hours, not absolute fishing hours.
+# ============================================================
+
+
+# =========================
+# SETTINGS
+# =========================
+
+common_reference_class <- 2
+common_reference_year <- 2019
+
+
+# =========================
+# 1. CHECK THE COMMON REFERENCE
+# =========================
+
+reference_matrix <- switch(
+  as.character(common_reference_class),
+  "1" = class_1_proportion_matrix,
+  "2" = class_2_proportion_matrix,
+  stop(
+    "common_reference_class must be either 1 or 2."
+  )
+)
+
+if (
+  !as.character(common_reference_year) %in%
+    names(reference_matrix)
+) {
+  stop(
+    "Reference year ",
+    common_reference_year,
+    " is not available in the class ",
+    common_reference_class,
+    " proportion matrix."
+  )
+}
+
+
+# =========================
+# 2. CALCULATE SIMILARITY AT ONE RADIUS
+# =========================
+
+calculate_similarity_to_class1_2019 <- function(
+    radius_m
+) {
+
+  # ----------------------------------------------------------
+  # Define neighbouring C-squares
+  # ----------------------------------------------------------
+
+  neighbours <- spdep::dnearneigh(
+    similarity_coordinates,
+    d1 = 0,
+    d2 = radius_m
+  )
+
+  # Number of C-squares without neighbours at this radius
+  n_isolated <- sum(
+    spdep::card(neighbours) == 0
+  )
+
+  if (n_isolated > 0) {
+    message(
+      "Radius ",
+      radius_m / 1000,
+      " km: ",
+      n_isolated,
+      " C-squares have no neighbours."
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Create row-standardised neighbourhood weights
+  # ----------------------------------------------------------
+
+  neighbour_weights <- spdep::nb2listw(
+    neighbours,
+    style = "W",
+    zero.policy = TRUE
+  )
+
+  # ----------------------------------------------------------
+  # Function for smoothing one spatial distribution
+  # ----------------------------------------------------------
+
+  smooth_distribution <- function(
+      proportions
+  ) {
+
+    spdep::lag.listw(
+      neighbour_weights,
+      as.numeric(proportions),
+      zero.policy = TRUE
+    )
+  }
+
+  # ----------------------------------------------------------
+  # Common reference:
+  # profitability class 1 in 2019
+  # ----------------------------------------------------------
+
+  reference_distribution <- smooth_distribution(
+    class_1_proportion_matrix[[as.character(common_reference_year)]]
+  )
+
+  # ----------------------------------------------------------
+  # Compare all class 1 years with class 1 in 2019
+  # ----------------------------------------------------------
+
+  class_1_results <- purrr::map_dfr(
+    years_kan_lk,
+    function(year_i) {
+
+      annual_distribution <- smooth_distribution(
+        class_1_proportion_matrix[[as.character(year_i)]]
+      )
+
+      tibble::tibble(
+        radius_km = radius_m / 1000,
+        kan_lk = 1L,
+        Year = year_i,
+        reference_class = common_reference_class,
+        reference_year = common_reference_year,
+        cosine_similarity = cosine_similarity(
+          annual_distribution,
+          reference_distribution
+        )
+      )
+    }
+  )
+
+  # ----------------------------------------------------------
+  # Compare all class 2 years with class 1 in 2019
+  # ----------------------------------------------------------
+
+  class_2_results <- purrr::map_dfr(
+    years_kan_lk,
+    function(year_i) {
+
+      annual_distribution <- smooth_distribution(
+        class_2_proportion_matrix[[as.character(year_i)]]
+      )
+
+      tibble::tibble(
+        radius_km = radius_m / 1000,
+        kan_lk = 2L,
+        Year = year_i,
+        reference_class = common_reference_class,
+        reference_year = common_reference_year,
+        cosine_similarity = cosine_similarity(
+          annual_distribution,
+          reference_distribution
+        )
+      )
+    }
+  )
+
+  # ----------------------------------------------------------
+  # Combine both profitability classes
+  # ----------------------------------------------------------
+
+  dplyr::bind_rows(
+    class_1_results,
+    class_2_results
+  )
+}
+
+
+# =========================
+# 3. RUN ALL NEIGHBOURHOOD RADII
+# =========================
+
+similarity_to_class1_2019_long <- purrr::map_dfr(
+  radii_m,
+  calculate_similarity_to_class1_2019
+) %>%
+  dplyr::mutate(
+    profitability_class = paste0(
+      "Class ",
+      kan_lk
+    ),
+
+    class_year = paste0(
+      "Class",
+      kan_lk,
+      "_",
+      Year
+    )
+  ) %>%
+  dplyr::arrange(
+    radius_km,
+    kan_lk,
+    Year
+  )
+
+
+# =========================
+# 4. CREATE WIDE TABLE
+#
+# Rows:
+#   neighbourhood radii
+#
+# Columns:
+#   Class1_2016, Class1_2017, ...
+#   Class2_2016, Class2_2017, ...
+# =========================
+
+similarity_to_class1_2019_table <-
+  similarity_to_class1_2019_long %>%
+  dplyr::select(
+    radius_km,
+    class_year,
+    cosine_similarity
+  ) %>%
+  tidyr::pivot_wider(
+    names_from = class_year,
+    values_from = cosine_similarity
+  ) %>%
+  dplyr::arrange(
+    radius_km
+  )
+
+
+# =========================
+# 5. CREATE ROUNDED PRINT VERSION
+# =========================
+
+similarity_to_class1_2019_print <-
+  similarity_to_class1_2019_table %>%
+  dplyr::mutate(
+    dplyr::across(
+      -radius_km,
+      ~ round(.x, 3)
+    )
+  )
+
+
+# =========================
+# 6. PRINT TABLE
+# =========================
+
+cat("\n")
+cat("============================================================\n")
+cat("SIMILARITY TO PROFITABILITY CLASS 1 IN 2019\n")
+cat("============================================================\n")
+
+print(
+  similarity_to_class1_2019_print
+)
+
+
+# Copy-friendly Markdown table
+
+cat("\n")
+cat("COPY-FRIENDLY TABLE\n")
+cat("\n")
+
+print(
+  knitr::kable(
+    similarity_to_class1_2019_print,
+    format = "pipe",
+    align = c(
+      "r",
+      rep(
+        "r",
+        ncol(similarity_to_class1_2019_print) - 1
+      )
+    )
+  )
+)
+
+
+# =========================
+# 7. EXPORT WIDE AND LONG TABLES
+# =========================
+
+write.csv(
+  similarity_to_class1_2019_table,
+  file.path(
+    outPath,
+    "similarity_to_class1_2019_by_radius.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  similarity_to_class1_2019_long,
+  file.path(
+    outPath,
+    "similarity_to_class1_2019_by_radius_long.csv"
+  ),
+  row.names = FALSE
+)
+
+
+# =========================
+# 8. QA CHECK
+#
+# Class 1 in 2019 is compared with itself and should therefore
+# equal 1 at every neighbourhood radius.
+# =========================
+
+reference_similarity_check <-
+  similarity_to_class1_2019_long %>%
+  dplyr::filter(
+    kan_lk == common_reference_class,
+    Year == common_reference_year
+  )
+
+if (
+  any(
+    abs(
+      reference_similarity_check$cosine_similarity - 1
+    ) > 1e-10,
+    na.rm = TRUE
+  )
+) {
+  stop(
+    "QA failure: Class 1 in 2019 does not have similarity 1 ",
+    "when compared with itself."
+  )
+}
+
+message(
+  "QA passed: Class 1 in 2019 has cosine similarity 1 ",
+  "at every neighbourhood radius."
+)

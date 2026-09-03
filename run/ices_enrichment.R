@@ -105,11 +105,11 @@ csq_sf <- csq_sf %>%
   # =========================
 
   rect_tila_lut <- read.csv(
-    file.path(dataPath, "ices_data/ICESrectangles_to_tilastoruutu.csv"),
+    file.path(dataPath, "ices_data/ICESrectangles_to_tilastoruutu_to_subdivisions.csv"),
     stringsAsFactors = FALSE
   ) %>%
     rename(
-      ICESrectangle = ICESNAME,
+      ICESrectangle = ices_Data,
       tilastoruutu  = FinnishNum
     ) %>%
     distinct(ICESrectangle, tilastoruutu)

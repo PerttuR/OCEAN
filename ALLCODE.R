@@ -170,12 +170,26 @@ scenario_file <- file.path(
   "scenario_results_mean_fishing.rds"
 )
 
+scenario_file_30 <- file.path(
+  outPath,
+  "scenario_results_mean_fishing_SD30.rds"
+)
+
+scenario_file_31 <- file.path(
+  outPath,
+  "scenario_results_mean_fishing_SD31.rds"
+)
+
+# --------------------------------------------------
+# 4A. Whole study area
+# --------------------------------------------------
+
 if (
   USE_CACHE &&
   file.exists(scenario_file)
 ) {
 
-  message("Loading mean fishing scenarios")
+  message("Loading whole-area mean-fishing scenarios")
 
   scenario_results <- readRDS(
     scenario_file
@@ -183,50 +197,117 @@ if (
 
 } else {
 
-  message("Running mean fishing scenarios")
+  message("Running whole-area mean-fishing scenarios")
 
   scenario_results <- run_scenarios_mean_fishing(
     S = S,
     years_use = defined_years_chr,
     n_sim = N_SIM_SCENARIOS,
-    shares = c(
-      0.25,
-      0.50,
-      0.75,
-      1.00
-    )
+    shares = c(0.25, 0.50, 0.75, 1.00)
   )
-
-  scenario_results_30 <- run_scenarios_mean_fishing(
-  S = S,
-  years_use = defined_years_chr,
-  subdiv = 30,
-  n_sim = N_SIM_SCENARIOS
-)
-
-scenario_results_31 <- run_scenarios_mean_fishing(
-  S = S,
-  years_use = defined_years_chr,
-  subdiv = 31,
-  n_sim = N_SIM_SCENARIOS
-)
-
-scenario_results_subdiv <- bind_rows(
-  scenario_results_30 %>% mutate(SubDivisio = 30),
-  scenario_results_31 %>% mutate(SubDivisio = 31)
-)
 
   saveRDS(
-    scenario_file,
     scenario_results,
-scenario_results_30,
-scenario_results_31
+    scenario_file
+  )
+}
+
+# --------------------------------------------------
+# 4B. Subdivision 30
+# --------------------------------------------------
+
+if (
+  USE_CACHE &&
+  file.exists(scenario_file_30)
+) {
+
+  message("Loading subdivision 30 scenarios")
+
+  scenario_results_30 <- readRDS(
+    scenario_file_30
   )
 
+} else {
+
+  message("Running subdivision 30 scenarios")
+
+  scenario_results_30 <- run_scenarios_mean_fishing(
+    S = S,
+    years_use = defined_years_chr,
+    n_sim = N_SIM_SCENARIOS,
+    shares = c(0.25, 0.50, 0.75, 1.00),
+    subdiv = 30
+  )
+
+  saveRDS(
+    scenario_results_30,
+    scenario_file_30
+  )
 }
+
+# --------------------------------------------------
+# 4C. Subdivision 31
+# --------------------------------------------------
+
+if (
+  USE_CACHE &&
+  file.exists(scenario_file_31)
+) {
+
+  message("Loading subdivision 31 scenarios")
+
+  scenario_results_31 <- readRDS(
+    scenario_file_31
+  )
+
+} else {
+
+  message("Running subdivision 31 scenarios")
+
+  scenario_results_31 <- run_scenarios_mean_fishing(
+    S = S,
+    years_use = defined_years_chr,
+    n_sim = N_SIM_SCENARIOS,
+    shares = c(0.25, 0.50, 0.75, 1.00),
+    subdiv = 31
+  )
+
+  saveRDS(
+    scenario_results_31,
+    scenario_file_31
+  )
+}
+
+# --------------------------------------------------
+# 4D. Combine subdivision results
+# --------------------------------------------------
+
+scenario_results_subdiv <- dplyr::bind_rows(
+  scenario_results_30,
+  scenario_results_31
+)
+
+# --------------------------------------------------
+# 4E. Summary tables
+# --------------------------------------------------
 
 scenario_summary <- summarise_scenarios_mean_fishing(
   scenario_results
+)
+
+scenario_summary_30 <- summarise_scenarios_mean_fishing(
+  scenario_results_30
+) %>%
+  dplyr::mutate(SubDivisio = 30, .before = 1)
+
+scenario_summary_31 <- summarise_scenarios_mean_fishing(
+  scenario_results_31
+) %>%
+  dplyr::mutate(SubDivisio = 31, .before = 1)
+
+scenario_summary_subdiv <- dplyr::bind_rows(
+  scenario_summary_30,
+  scenario_summary_31
 )
 
 scenario_values <- scenario_values_mean_fishing(
@@ -234,53 +315,33 @@ scenario_values <- scenario_values_mean_fishing(
   digits = 2
 )
 
-scenario_summary_30 <- summarise_scenarios_mean_fishing(
-  scenario_results_30
-)
-
-scenario_summary_31 <- summarise_scenarios_mean_fishing(
-  scenario_results_31
-)
-
 scenario_values_30 <- scenario_values_mean_fishing(
   scenario_results_30,
   digits = 2
-)
+) %>%
+  dplyr::mutate(SubDivisio = 30, .before = 1)
 
 scenario_values_31 <- scenario_values_mean_fishing(
   scenario_results_31,
   digits = 2
+) %>%
+  dplyr::mutate(SubDivisio = 31, .before = 1)
+
+scenario_values_subdiv <- dplyr::bind_rows(
+  scenario_values_30,
+  scenario_values_31
 )
 
-print(scenario_summary)
-
-print("ALL")
+print("WHOLE STUDY AREA")
 print(scenario_values)
 
-print("SD30")
-print(scenario_values_30)
-
-print("SD31")
-print(scenario_values_31)
+print("BY ICES SUBDIVISION")
+print(scenario_values_subdiv)
 
 
-write.csv(
-  scenario_summary,
-  file.path(
-    outPath,
-    "scenario_summary.csv"
-  ),
-  row.names = FALSE
-)
-
-write.csv(
-  scenario_values,
-  file.path(
-    outPath,
-    "scenario_values.csv"
-  ),
-  row.names = FALSE
-)
+# --------------------------------------------------
+# 4G. Plot outputs
+# --------------------------------------------------
 
 plot_scenarios_mean_fishing(
   scenario_results,
@@ -295,25 +356,11 @@ plot_scenarios_total_mean_fishing(
 )
 
 plot_scenarios_mean_fishing_subdiv(
-  scenario_results_subdiv
+  scenario_results_subdiv,
+  years_label = "Mean fishing distribution 2017–2025",
+  outPath = outPath,
+  file_name = "scenario_mean_fishing_by_subdivision.png"
 )
-
-
-# # =========================
-# # 4B. SUBDIVISION SCENARIOS (cached optional)
-# # =========================
-
-# subdiv_results <- run_subdivision_scenarios(S, n_sim = N_SIM_SUBDIV)
-
-# write.table(
-#   subdiv_results,
-#   file.path(outPath, "scenario_subdivision.csv"),
-#   sep = ",",
-#   row.names = FALSE,
-#   quote = FALSE
-# )
-
-# plot_subdivision_scenarios(subdiv_results)
 
 # =========================
 # 5. ICES DATASETS
@@ -534,6 +581,11 @@ plot_base_map(
 
 # source("run/calculate_similarity_years.R")
 
+# ============================================================
+# INDIVIDUAL WIND-AREA IMPACTS BY SUBDIVISION
+# Used for the existing ranked bar plot
+# ============================================================
+
 wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
   mean_csq = mean_csq_defined,
   wind = S_all$wind,
@@ -541,9 +593,613 @@ wind_overlap_mean <- calc_wind_cable_overlap_from_mean_fishing(
 )
 
 wind_overlap_mean <- wind_overlap_mean %>%
-  arrange(desc(total_perc))
+  dplyr::arrange(
+    SubDivisio,
+    dplyr::desc(total_perc)
+  )
+
+top1_id_30 <- wind_overlap_mean %>%
+  filter(SubDivisio == 30) %>%
+  arrange(desc(total_perc)) %>%
+  distinct(wind_id, .keep_all = TRUE) %>%
+  slice(1) %>%
+  pull(wind_id)
+
+top5_ids_30 <- wind_overlap_mean %>%
+  filter(SubDivisio == 30) %>%
+  arrange(desc(total_perc)) %>%
+  distinct(wind_id, .keep_all = TRUE) %>%
+  slice(1:5) %>%
+  pull(wind_id)
+
+top1_id_31 <- wind_overlap_mean %>%
+  filter(SubDivisio == 31) %>%
+  arrange(desc(total_perc)) %>%
+  distinct(wind_id, .keep_all = TRUE) %>%
+  slice(1) %>%
+  pull(wind_id)
+
+top5_ids_31 <- wind_overlap_mean %>%
+  filter(SubDivisio == 31) %>%
+  arrange(desc(total_perc)) %>%
+  distinct(wind_id, .keep_all = TRUE) %>%
+  slice(1:5) %>%
+  pull(wind_id)
 
 
+# ============================================================
+# RANK WIND AREAS ACROSS THE WHOLE STUDY AREA
+#
+# This separate calculation is necessary because
+# wind_overlap_mean contains SD30- and SD31-specific percentages.
+# Percentages with different subdivision denominators should not
+# be used to produce a whole-study-area project ranking.
+# ============================================================
+
+mean_csq_rank <- mean_csq_defined %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
+
+wind_rank <- S_all$wind %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
+
+cable_rank <- S_all$cable_full %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
+
+total_hours_rank <- sum(
+  mean_csq_rank$FishingHours,
+  na.rm = TRUE
+)
+
+if (
+  is.na(total_hours_rank) ||
+  total_hours_rank == 0
+) {
+  stop(
+    "Total mean fishing hours are zero or NA; ",
+    "wind-area ranking cannot be calculated."
+  )
+}
+
+wind_overlap_whole <- purrr::map_dfr(
+  wind_rank$wind_id,
+  function(wid) {
+
+    wind_one <- wind_rank %>%
+      dplyr::filter(
+        wind_id == wid
+      )
+
+    cable_one <- cable_rank %>%
+      dplyr::filter(
+        wind_id == wid
+      )
+
+    wind_flag <- lengths(
+      sf::st_intersects(
+        mean_csq_rank,
+        wind_one
+      )
+    ) > 0
+
+    if (nrow(cable_one) > 0) {
+
+      cable_flag <- lengths(
+        sf::st_intersects(
+          mean_csq_rank,
+          cable_one
+        )
+      ) > 0
+
+    } else {
+
+      cable_flag <- rep(
+        FALSE,
+        nrow(mean_csq_rank)
+      )
+    }
+
+    # Do not count the same C-square under both wind and cable
+    cable_only_flag <- cable_flag & !wind_flag
+
+    wind_hours <- sum(
+      mean_csq_rank$FishingHours[wind_flag],
+      na.rm = TRUE
+    )
+
+    cable_hours <- sum(
+      mean_csq_rank$FishingHours[cable_only_flag],
+      na.rm = TRUE
+    )
+
+    tibble::tibble(
+      wind_id = wid,
+      country = wind_one$country[1],
+      wind_perc = 100 *
+        wind_hours /
+        total_hours_rank,
+      cable_perc = 100 *
+        cable_hours /
+        total_hours_rank,
+      total_perc = 100 *
+        (wind_hours + cable_hours) /
+        total_hours_rank
+    )
+  }
+) %>%
+  dplyr::arrange(
+    dplyr::desc(total_perc)
+  ) %>%
+  dplyr::mutate(
+    impact_rank = dplyr::row_number()
+  )
+
+print("WHOLE-STUDY-AREA WIND PROJECT RANKING")
+print(wind_overlap_whole)
+
+
+# ============================================================
+# IDENTIFY THE HIGHEST-IMPACT PROJECTS
+# ============================================================
+
+top1_id <- wind_overlap_whole %>%
+  dplyr::slice_head(n = 1) %>%
+  dplyr::pull(wind_id)
+
+top5_ids <- wind_overlap_whole %>%
+  dplyr::slice_head(n = 5) %>%
+  dplyr::pull(wind_id)
+
+message(
+  "Highest-impact wind area ID: ",
+  paste(
+    top1_id,
+    collapse = ", "
+  )
+)
+
+message(
+  "Five highest-impact wind area IDs: ",
+  paste(
+    top5_ids,
+    collapse = ", "
+  )
+)
+
+
+# Optional: inspect the selected projects and their impacts
+
+top_projects <- wind_overlap_whole %>%
+  dplyr::filter(
+    wind_id %in% top5_ids
+  ) %>%
+  dplyr::select(
+    impact_rank,
+    wind_id,
+    country,
+    wind_perc,
+    cable_perc,
+    total_perc
+  )
+
+print("FIVE HIGHEST-IMPACT PROJECTS")
+print(top_projects)
+
+
+# ============================================================
+# CREATE SYSTEM CONTAINING ONLY THE HIGHEST-IMPACT PROJECT
+# ============================================================
+
+S_top1 <- S_all
+
+S_top1$wind <- S_all$wind %>%
+  dplyr::filter(
+    wind_id %in% top1_id
+  )
+
+S_top1$wind_proj <- S_top1$wind %>%
+  sf::st_transform(3067)
+
+S_top1$cable_full <- S_all$cable_full %>%
+  dplyr::filter(
+    wind_id %in% top1_id
+  )
+
+
+# ============================================================
+# CREATE SYSTEM CONTAINING ONLY THE FIVE
+# HIGHEST-IMPACT PROJECTS
+# ============================================================
+
+S_top5 <- S_all
+
+S_top5$wind <- S_all$wind %>%
+  dplyr::filter(
+    wind_id %in% top5_ids
+  )
+
+S_top5$wind_proj <- S_top5$wind %>%
+  sf::st_transform(3067)
+
+S_top5$cable_full <- S_all$cable_full %>%
+  dplyr::filter(
+    wind_id %in% top5_ids
+  )
+
+
+# ============================================================
+# SANITY CHECK: RETAINED WIND AND CABLE IDS
+# ============================================================
+
+stopifnot(
+  all(
+    S_top1$wind$wind_id %in% top1_id
+  ),
+  all(
+    S_top1$cable_full$wind_id %in% top1_id
+  ),
+  all(
+    S_top5$wind$wind_id %in% top5_ids
+  ),
+  all(
+    S_top5$cable_full$wind_id %in% top5_ids
+  )
+)
+
+message(
+  "Top-1 system contains ",
+  nrow(S_top1$wind),
+  " wind area(s) and ",
+  nrow(S_top1$cable_full),
+  " cable corridor(s)."
+)
+
+message(
+  "Top-5 system contains ",
+  nrow(S_top5$wind),
+  " wind areas and ",
+  nrow(S_top5$cable_full),
+  " cable corridors."
+)
+
+
+# ============================================================
+# RUN FIXED WHOLE-STUDY-AREA SCENARIOS
+#
+# n_sim = 1 because these are fixed project portfolios.
+# share = 1 means all projects retained in S_top1 or S_top5
+# are developed.
+# ============================================================
+
+scenario_top1 <- run_scenarios_mean_fishing(
+  S = S_top1,
+  years_use = defined_years_chr,
+  n_sim = 1,
+  shares = 1
+)
+
+scenario_top5 <- run_scenarios_mean_fishing(
+  S = S_top5,
+  years_use = defined_years_chr,
+  n_sim = 1,
+  shares = 1
+)
+
+# ============================================================
+# CREATE SUBDIVISION-SPECIFIC TOP-PROJECT SYSTEMS
+#
+# Whole-area table:
+#   uses top1_id and top5_ids from wind_overlap_whole
+#
+# Subdivision table:
+#   SD30 uses top1_id_30 and top5_ids_30
+#   SD31 uses top1_id_31 and top5_ids_31
+# ============================================================
+
+
+# ------------------------------------------------------------
+# SD30: only highest-impact SD30 project
+# ------------------------------------------------------------
+
+S_top1_30 <- S_all
+
+S_top1_30$wind <- S_all$wind %>%
+  dplyr::filter(
+    wind_id %in% top1_id_30
+  )
+
+S_top1_30$wind_proj <- S_top1_30$wind %>%
+  sf::st_transform(3067)
+
+S_top1_30$cable_full <- S_all$cable_full %>%
+  dplyr::filter(
+    wind_id %in% top1_id_30
+  )
+
+
+# ------------------------------------------------------------
+# SD30: only five highest-impact SD30 projects
+# ------------------------------------------------------------
+
+S_top5_30 <- S_all
+
+S_top5_30$wind <- S_all$wind %>%
+  dplyr::filter(
+    wind_id %in% top5_ids_30
+  )
+
+S_top5_30$wind_proj <- S_top5_30$wind %>%
+  sf::st_transform(3067)
+
+S_top5_30$cable_full <- S_all$cable_full %>%
+  dplyr::filter(
+    wind_id %in% top5_ids_30
+  )
+
+
+# ------------------------------------------------------------
+# SD31: only highest-impact SD31 project
+# ------------------------------------------------------------
+
+S_top1_31 <- S_all
+
+S_top1_31$wind <- S_all$wind %>%
+  dplyr::filter(
+    wind_id %in% top1_id_31
+  )
+
+S_top1_31$wind_proj <- S_top1_31$wind %>%
+  sf::st_transform(3067)
+
+S_top1_31$cable_full <- S_all$cable_full %>%
+  dplyr::filter(
+    wind_id %in% top1_id_31
+  )
+
+
+# ------------------------------------------------------------
+# SD31: only five highest-impact SD31 projects
+# ------------------------------------------------------------
+
+S_top5_31 <- S_all
+
+S_top5_31$wind <- S_all$wind %>%
+  dplyr::filter(
+    wind_id %in% top5_ids_31
+  )
+
+S_top5_31$wind_proj <- S_top5_31$wind %>%
+  sf::st_transform(3067)
+
+S_top5_31$cable_full <- S_all$cable_full %>%
+  dplyr::filter(
+    wind_id %in% top5_ids_31
+  )
+
+
+# ============================================================
+# CHECK THE SELECTED PROJECT IDS
+# ============================================================
+
+message(
+  "SD30 highest-impact area: ",
+  paste(top1_id_30, collapse = ", ")
+)
+
+message(
+  "SD30 five highest-impact areas: ",
+  paste(top5_ids_30, collapse = ", ")
+)
+
+message(
+  "SD31 highest-impact area: ",
+  paste(top1_id_31, collapse = ", ")
+)
+
+message(
+  "SD31 five highest-impact areas: ",
+  paste(top5_ids_31, collapse = ", ")
+)
+
+stopifnot(
+  nrow(S_top1_30$wind) == length(top1_id_30),
+  nrow(S_top5_30$wind) == length(top5_ids_30),
+  nrow(S_top1_31$wind) == length(top1_id_31),
+  nrow(S_top5_31$wind) == length(top5_ids_31)
+)
+
+
+# ============================================================
+# RUN FIXED SUBDIVISION-SPECIFIC SCENARIOS
+#
+# n_sim = 1 because each selected portfolio is fixed.
+# shares = 1 means all projects retained in each temporary
+# system are included.
+# ============================================================
+
+scenario_top1_30 <- run_scenarios_mean_fishing(
+  S = S_top1_30,
+  years_use = defined_years_chr,
+  n_sim = 1,
+  shares = 1,
+  subdiv = 30
+)
+
+scenario_top5_30 <- run_scenarios_mean_fishing(
+  S = S_top5_30,
+  years_use = defined_years_chr,
+  n_sim = 1,
+  shares = 1,
+  subdiv = 30
+)
+
+scenario_top1_31 <- run_scenarios_mean_fishing(
+  S = S_top1_31,
+  years_use = defined_years_chr,
+  n_sim = 1,
+  shares = 1,
+  subdiv = 31
+)
+
+scenario_top5_31 <- run_scenarios_mean_fishing(
+  S = S_top5_31,
+  years_use = defined_years_chr,
+  n_sim = 1,
+  shares = 1,
+  subdiv = 31
+)
+
+
+# ============================================================
+# CREATE SUBDIVISION TABLE ROWS
+# ============================================================
+
+scenario_values_top1_subdiv <- dplyr::bind_rows(
+
+  scenario_values_mean_fishing(
+    scenario_top1_30,
+    digits = 2
+  ) %>%
+    dplyr::select(-scenario) %>%
+    dplyr::mutate(
+      SubDivisio = 30,
+      scenario = "Only highest-impact area",
+      .before = 1
+    ),
+
+  scenario_values_mean_fishing(
+    scenario_top1_31,
+    digits = 2
+  ) %>%
+    dplyr::select(-scenario) %>%
+    dplyr::mutate(
+      SubDivisio = 31,
+      scenario = "Only highest-impact area",
+      .before = 1
+    )
+)
+
+scenario_values_top5_subdiv <- dplyr::bind_rows(
+
+  scenario_values_mean_fishing(
+    scenario_top5_30,
+    digits = 2
+  ) %>%
+    dplyr::select(-scenario) %>%
+    dplyr::mutate(
+      SubDivisio = 30,
+      scenario = "Only 5 highest-impact areas",
+      .before = 1
+    ),
+
+  scenario_values_mean_fishing(
+    scenario_top5_31,
+    digits = 2
+  ) %>%
+    dplyr::select(-scenario) %>%
+    dplyr::mutate(
+      SubDivisio = 31,
+      scenario = "Only 5 highest-impact areas",
+      .before = 1
+    )
+)
+
+
+# ============================================================
+# APPEND SUBDIVISION ROWS
+# ============================================================
+
+scenario_values_subdiv <- dplyr::bind_rows(
+  scenario_values_subdiv,
+  scenario_values_top1_subdiv,
+  scenario_values_top5_subdiv
+)
+
+
+# ============================================================
+# FORMAT TABLES TO ONE DECIMAL
+# ============================================================
+
+scenario_values_print <- scenario_values %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(
+        wind_impact,
+        cable_impact,
+        total_impact
+      ),
+      ~ round(.x, 1)
+    )
+  )
+
+scenario_values_subdiv_print <- scenario_values_subdiv %>%
+  dplyr::mutate(
+    dplyr::across(
+      c(
+        wind_impact,
+        cable_impact,
+        total_impact
+      ),
+      ~ round(.x, 1)
+    )
+  )
+
+
+# ============================================================
+# PRINT TABLES
+# ============================================================
+
+print("WHOLE STUDY AREA")
+print(scenario_values_print)
+
+print("BY ICES SUBDIVISION")
+print(scenario_values_subdiv_print)
+
+
+# Copy-friendly pipe tables
+
+cat("\nWHOLE STUDY AREA\n")
+
+print(
+  knitr::kable(
+    scenario_values_print,
+    format = "pipe"
+  )
+)
+
+cat("\nBY ICES SUBDIVISION\n")
+
+print(
+  knitr::kable(
+    scenario_values_subdiv_print,
+    format = "pipe"
+  )
+)
+
+
+# ============================================================
+# SAVE UPDATED TABLES
+# ============================================================
+
+write.csv(
+  scenario_values_print,
+  file.path(
+    outPath,
+    "scenario_values_with_top_projects.csv"
+  ),
+  row.names = FALSE
+)
+
+write.csv(
+  scenario_values_subdiv_print,
+  file.path(
+    outPath,
+    "scenario_values_by_subdivision_with_top_projects.csv"
+  ),
+  row.names = FALSE
+)
 
 ### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
 
@@ -613,6 +1269,36 @@ data.frame(
   sum_area_km2 = sum_area / 1e6,
   union_area_km2 = union_area / 1e6,
   overlap_pct = 100 * (sum_area - union_area) / sum_area
+)
+
+
+
+# --------------------------------------------------
+# 4F. Write outputs
+# --------------------------------------------------
+
+write.csv(
+  scenario_summary,
+  file.path(outPath, "scenario_summary.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  scenario_values,
+  file.path(outPath, "scenario_values.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  scenario_summary_subdiv,
+  file.path(outPath, "scenario_summary_by_subdivision.csv"),
+  row.names = FALSE
+)
+
+write.csv(
+  scenario_values_subdiv,
+  file.path(outPath, "scenario_values_by_subdivision.csv"),
+  row.names = FALSE
 )
 
 ----- run/data_prepare.R -----
@@ -1500,7 +2186,6 @@ select_wind_by_area <- function(
   )
 }
 
-
 # ============================================================
 # MAIN MEAN-FISHING SCENARIO ENGINE
 # ============================================================
@@ -1509,48 +2194,75 @@ run_scenarios_mean_fishing <- function(
     S,
     years_use,
     n_sim = 2000,
-    shares = c(0.25,0.5,0.75,1),
+    shares = c(0.25, 0.50, 0.75, 1.00),
     subdiv = NULL,
     crs_proj = 3067
 ) {
 
-  message("Building mean fishing layer for scenario analysis")
+  message(
+    "Building mean fishing layer",
+    if (!is.null(subdiv)) paste0(" for subdivision ", subdiv)
+  )
+
+  # --------------------------------------------------
+  # 1. Build mean fishing layer
+  # --------------------------------------------------
 
   mean_csq <- build_mean_csq(
     sf_list = S$sf_list,
     years_use = years_use
   )
 
-  if(!is.null(subdiv)) {
+  # --------------------------------------------------
+  # 2. Optionally restrict fishing data to subdivision
+  # --------------------------------------------------
 
-  ices_sub <- S$ices_area %>%
-    dplyr::filter(SubDivisio %in% c(30,31)) %>%
-    sf::st_transform(4326)
+  if (!is.null(subdiv)) {
 
-  pts <- mean_csq %>%
-    sf::st_centroid()
+    ices_sub <- S$ices_area %>%
+      dplyr::filter(SubDivisio %in% c(30, 31)) %>%
+      sf::st_make_valid() %>%
+      sf::st_transform(crs_proj)
 
-  mat <- sf::st_within(
-    pts,
-    ices_sub
-  )
+    mean_csq_proj_temp <- mean_csq %>%
+      sf::st_make_valid() %>%
+      sf::st_transform(crs_proj)
 
-  mean_csq$SubDivisio <- sapply(
-    mat,
-    function(x) {
-      if(length(x)==0) return(NA)
-      ices_sub$SubDivisio[x[1]]
-    }
-  )
+    # Assign each C-square by its centroid
+    csq_points <- sf::st_centroid(mean_csq_proj_temp)
 
-  mean_csq <- mean_csq %>%
-    dplyr::filter(
-      SubDivisio == subdiv
+    subdivision_match <- sf::st_within(
+      csq_points,
+      ices_sub
     )
-}
 
+    mean_csq$SubDivisio <- vapply(
+      subdivision_match,
+      function(x) {
+        if (length(x) == 0) {
+          return(NA_real_)
+        }
 
-}
+        as.numeric(ices_sub$SubDivisio[x[1]])
+      },
+      numeric(1)
+    )
+
+    mean_csq <- mean_csq %>%
+      dplyr::filter(SubDivisio == subdiv)
+
+    if (nrow(mean_csq) == 0) {
+      stop(
+        "No mean-fishing C-squares found in subdivision ",
+        subdiv,
+        "."
+      )
+    }
+  }
+
+  # --------------------------------------------------
+  # 3. Transform spatial layers
+  # --------------------------------------------------
 
   mean_csq_proj <- mean_csq %>%
     sf::st_make_valid() %>%
@@ -1565,7 +2277,7 @@ run_scenarios_mean_fishing <- function(
     sf::st_transform(crs_proj)
 
   # --------------------------------------------------
-  # Wind area table
+  # 4. Wind-area table
   # --------------------------------------------------
 
   wind_area_tbl <- wind_proj %>%
@@ -1576,97 +2288,125 @@ run_scenarios_mean_fishing <- function(
     )
 
   if (any(is.na(wind_area_tbl$wind_id))) {
-    stop("S$wind must contain a wind_id column.")
+    stop("S$wind must contain non-missing wind_id values.")
   }
 
   if (!"wind_id" %in% names(cable_proj)) {
     stop("S$cable_full must contain a wind_id column.")
   }
 
-  # Keep only cable corridors linked to available wind IDs
   cable_proj <- cable_proj %>%
     dplyr::filter(wind_id %in% wind_area_tbl$wind_id)
 
   # --------------------------------------------------
-  # Precompute intersections as wind_id lists
+  # 5. Precompute intersections
   # --------------------------------------------------
 
-  message("Precomputing intersections for mean fishing layer")
+  message(
+    "Precomputing intersections",
+    if (!is.null(subdiv)) paste0(" for subdivision ", subdiv)
+  )
 
-  hits_wind_idx <- sf::st_intersects(mean_csq_proj, wind_proj)
+  hits_wind_idx <- sf::st_intersects(
+    mean_csq_proj,
+    wind_proj
+  )
 
-  wind_hits_ids <- lapply(hits_wind_idx, function(i) {
-    wind_proj$wind_id[i]
-  })
+  wind_hits_ids <- lapply(
+    hits_wind_idx,
+    function(i) wind_proj$wind_id[i]
+  )
 
-  hits_cable_idx <- sf::st_intersects(mean_csq_proj, cable_proj)
+  hits_cable_idx <- sf::st_intersects(
+    mean_csq_proj,
+    cable_proj
+  )
 
-  cable_hits_ids <- lapply(hits_cable_idx, function(i) {
-    cable_proj$wind_id[i]
-  })
+  cable_hits_ids <- lapply(
+    hits_cable_idx,
+    function(i) cable_proj$wind_id[i]
+  )
 
   hours <- mean_csq_proj$FishingHours
-
   total_hours <- sum(hours, na.rm = TRUE)
 
-  if (is.na(total_hours) || total_hours == 0) {
-    stop("Total FishingHours in mean_csq is zero or NA.")
+  if (!is.finite(total_hours) || total_hours <= 0) {
+    stop(
+      "Total mean FishingHours is zero or invalid",
+      if (!is.null(subdiv)) paste0(" in subdivision ", subdiv)
+    )
   }
 
   # --------------------------------------------------
-  # Run simulations
+  # 6. Run scenarios
   # --------------------------------------------------
 
-  message("Running mean-fishing scenarios")
+  message(
+    "Running mean-fishing scenarios",
+    if (!is.null(subdiv)) paste0(" for subdivision ", subdiv)
+  )
 
-  scenario_results <- purrr::map_dfr(shares, function(share_i) {
+  scenario_results <- purrr::map_dfr(
+    shares,
+    function(share_i) {
 
-    purrr::map_dfr(seq_len(n_sim), function(sim_i) {
+      purrr::map_dfr(
+        seq_len(n_sim),
+        function(sim_i) {
 
-      selected <- select_wind_by_area(
-        wind_area_tbl = wind_area_tbl,
-        share = share_i
+          selected <- select_wind_by_area(
+            wind_area_tbl = wind_area_tbl,
+            share = share_i
+          )
+
+          keep_ids <- selected$keep_ids
+
+          wind_flag <- vapply(
+            wind_hits_ids,
+            function(x) any(x %in% keep_ids),
+            logical(1)
+          )
+
+          cable_flag <- vapply(
+            cable_hits_ids,
+            function(x) any(x %in% keep_ids),
+            logical(1)
+          )
+
+          res <- compute_overlap_fast(
+            hours = hours,
+            wind_flag = wind_flag,
+            cable_flag = cable_flag
+          )
+
+          tibble::tibble(
+            sim_id = sim_i,
+            method = "mean_fishing_area",
+            SubDivisio = if (is.null(subdiv)) {
+              NA_integer_
+            } else {
+              as.integer(subdiv)
+            },
+            share = share_i,
+            target_area_share = share_i,
+            actual_area_share = selected$actual_share,
+            n_wind_select = length(keep_ids),
+            selected_area_m2 = selected$selected_area_m2,
+            target_area_m2 = selected$target_area_m2,
+            wind = unname(res["wind"]),
+            cable = unname(res["cable"]),
+            total = unname(res["total"])
+          )
+        }
       )
-
-      keep_ids <- selected$keep_ids
-
-      wind_flag <- vapply(
-        wind_hits_ids,
-        function(x) any(x %in% keep_ids),
-        logical(1)
-      )
-
-      cable_flag <- vapply(
-        cable_hits_ids,
-        function(x) any(x %in% keep_ids),
-        logical(1)
-      )
-
-      res <- compute_overlap_fast(
-        hours = hours,
-        wind_flag = wind_flag,
-        cable_flag = cable_flag
-      )
-
-      tibble::tibble(
-        sim_id = sim_i,
-        method = "mean_fishing_area",
-        share = share_i,
-        target_area_share = share_i,
-        actual_area_share = selected$actual_share,
-        n_wind_select = length(keep_ids),
-        selected_area_m2 = selected$selected_area_m2,
-        target_area_m2 = selected$target_area_m2,
-        wind = unname(res["wind"]),
-        cable = unname(res["cable"]),
-        total = unname(res["total"])
-      )
-    })
-  })
+    }
+  )
 
   attr(scenario_results, "years_use") <- as.character(years_use)
+  attr(scenario_results, "subdivision") <- subdiv
 
-  scenario_results
+  return(scenario_results)
+}
 
 
 
@@ -2437,7 +3177,6 @@ plot_components_count_marginal_mean_years <- function(res, outPath = "out") {
 
 
 #Preparation of data 
-
 calc_wind_cable_overlap_from_mean_fishing <- function(
     mean_csq,
     wind,
@@ -2447,34 +3186,35 @@ calc_wind_cable_overlap_from_mean_fishing <- function(
   mean_csq_p <- mean_csq %>%
     sf::st_transform(3067)
 
-  if(!"SubDivisio" %in% names(mean_csq_p)) {
-
-  pts <- mean_csq_p %>%
-    st_centroid()
-
-  subdiv_sf <- S$ices_area %>%
-    dplyr::filter(SubDivisio %in% c(30,31)) %>%
-    st_transform(3067)
-
-  mat <- st_within(
-    pts,
-    subdiv_sf
-  )
-
-  mean_csq_p$SubDivisio <- sapply(
-    mat,
-    function(x) {
-      if(length(x)==0) return(NA)
-      subdiv_sf$SubDivisio[x[1]]
-    }
-  )
-}
-
   wind_p <- wind %>%
     sf::st_transform(3067)
 
   cable_p <- cable_full %>%
     sf::st_transform(3067)
+
+  # --------------------------------------------------
+  # Assign each wind area to SD30 or SD31
+  # --------------------------------------------------
+
+  subdiv_sf <- S$ices_area %>%
+    dplyr::filter(SubDivisio %in% c(30, 31)) %>%
+    sf::st_transform(3067)
+
+  wind_cent <- wind_p %>%
+    sf::st_centroid()
+
+  mat <- sf::st_within(
+    wind_cent,
+    subdiv_sf
+  )
+
+  wind_p$SubDivisio <- sapply(
+    mat,
+    function(x) {
+      if (length(x) == 0) return(NA)
+      subdiv_sf$SubDivisio[x[1]]
+    }
+  )
 
   total_hours <- sum(mean_csq_p$FishingHours, na.rm = TRUE)
 
@@ -2490,79 +3230,65 @@ calc_wind_cable_overlap_from_mean_fishing <- function(
     cable_one <- cable_p %>%
       dplyr::filter(wind_id == wid)
 
-    wind_flag <- lengths(sf::st_intersects(mean_csq_p, wind_one)) > 0
+    wind_flag <- lengths(
+      sf::st_intersects(mean_csq_p, wind_one)
+    ) > 0
 
     if (nrow(cable_one) > 0) {
-      cable_flag <- lengths(sf::st_intersects(mean_csq_p, cable_one)) > 0
+      cable_flag <- lengths(
+        sf::st_intersects(mean_csq_p, cable_one)
+      ) > 0
     } else {
       cable_flag <- rep(FALSE, nrow(mean_csq_p))
     }
 
     cable_only_flag <- cable_flag & !wind_flag
 
-    wind_hours <- sum(mean_csq_p$FishingHours[wind_flag], na.rm = TRUE)
-    cable_hours <- sum(mean_csq_p$FishingHours[cable_only_flag], na.rm = TRUE)
+    wind_hours <- sum(
+      mean_csq_p$FishingHours[wind_flag],
+      na.rm = TRUE
+    )
 
-    bind_rows(
+    cable_hours <- sum(
+      mean_csq_p$FishingHours[cable_only_flag],
+      na.rm = TRUE
+    )
 
-  tibble(
-    wind_id = wid,
-    SubDivisio = 30,
-    country = wind_one$country[1],
-    wind_perc = 100 * sum(mean_csq_p$FishingHours[
-      wind_flag & mean_csq_p$SubDivisio==30
-    ],na.rm=TRUE) /
-      sum(mean_csq_p$FishingHours[
-        mean_csq_p$SubDivisio==30
-      ],na.rm=TRUE),
-
-    cable_perc = 100 * sum(mean_csq_p$FishingHours[
-      cable_only_flag & mean_csq_p$SubDivisio==30
-    ],na.rm=TRUE) /
-      sum(mean_csq_p$FishingHours[
-        mean_csq_p$SubDivisio==30
-      ],na.rm=TRUE)
-  ),
-
-  tibble(
-    wind_id = wid,
-    SubDivisio = 31,
-    country = wind_one$country[1],
-    wind_perc = 100 * sum(mean_csq_p$FishingHours[
-      wind_flag & mean_csq_p$SubDivisio==31
-    ],na.rm=TRUE) /
-      sum(mean_csq_p$FishingHours[
-        mean_csq_p$SubDivisio==31
-      ],na.rm=TRUE),
-
-    cable_perc = 100 * sum(mean_csq_p$FishingHours[
-      cable_only_flag & mean_csq_p$SubDivisio==31
-    ],na.rm=TRUE) /
-      sum(mean_csq_p$FishingHours[
-        mean_csq_p$SubDivisio==31
-      ],na.rm=TRUE)
-  )
-
-) %>%
-
-mutate(
-  total_perc = wind_perc + cable_perc
-)
+    tibble::tibble(
+      wind_id = wid,
+      SubDivisio = wind_one$SubDivisio[1],
+      country = wind_one$country[1],
+      wind_perc = 100 * wind_hours / total_hours,
+      cable_perc = 100 * cable_hours / total_hours,
+      total_perc = 100 * (wind_hours + cable_hours) / total_hours
+    )
   })
 }
 
 ### plot it ###
-plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
+plot_wind_cable_overlap_bars <- function(
+    df,
+    outPath = "out"
+) {
 
   df_ranked <- df %>%
-    dplyr::arrange(dplyr::desc(total_perc)) %>%
+    dplyr::group_by(SubDivisio) %>%
+    dplyr::arrange(
+      dplyr::desc(total_perc),
+      .by_group = TRUE
+    ) %>%
     dplyr::mutate(
-      rank_id = dplyr::row_number(),
-      rank_id = factor(rank_id, levels = as.character(seq_len(dplyr::n())))
-    )
+      rank_number = dplyr::row_number(),
+      rank_id = factor(
+        rank_number,
+        levels = sort(unique(rank_number))
+      )
+    ) %>%
+    dplyr::ungroup()
 
   plot_df <- df_ranked %>%
     dplyr::select(
+      SubDivisio,
       rank_id,
       wind_id,
       country,
@@ -2579,54 +3305,61 @@ plot_wind_cable_overlap_bars <- function(df, outPath = "out") {
       component = dplyr::recode(
         component,
         wind_perc = "Wind area",
-        cable_perc = "Cable"
+        cable_perc = "Cable corridor"
+      ),
+      subdivision_label = paste(
+        "ICES subdivision",
+        SubDivisio
       )
     )
 
   p <- ggplot(
-  plot_df,
-  aes(
-    x = rank_id,
-    y = perc,
-    fill = component
-  )
-) +
-  geom_col(width = 0.8) +
-  facet_wrap(
-  ~SubDivisio,
-  scales="free_x"
-) +
-  theme_minimal() +
-  labs(
-    x = "Wind area rank",
-    y = "% of average fishing hours",
-    fill = "Overlap",
-    title = "Fishing overlap by wind area and cable",
-    subtitle = "Bars are ranked from largest to smallest total overlap"
-  ) +
-  theme(
-    axis.text.x = element_text(
-      angle = 90,
-      vjust = 0.5,
-      hjust = 1
-    ),
-    legend.position = c(0.85, 0.85),
-    legend.background = element_rect(
-      fill = scales::alpha("white", 0.8),
-      colour = "grey70"
+    plot_df,
+    aes(
+      x = rank_id,
+      y = perc,
+      fill = component
     )
-  )
+  ) +
+    geom_col(width = 0.8) +
+    facet_wrap(
+      ~ subdivision_label,
+      scales = "free_x"
+    ) +
+    theme_minimal() +
+    labs(
+      x = "Wind area rank within subdivision",
+      y = "% of average fishing hours",
+      fill = "Overlap",
+      title = "Fishing overlap by wind area and cable corridor",
+      subtitle = paste0(
+        "Wind areas ranked separately within each ICES subdivision"
+      )
+    ) +
+    theme(
+      axis.text.x = element_text(
+        angle = 90,
+        vjust = 0.5,
+        hjust = 1
+      ),
+      legend.position = "top",
+      panel.grid.minor = element_blank()
+    )
 
   print(p)
 
   ggsave(
-    file.path(outPath, "wind_cable_overlap_stacked_bars.png"),
+    file.path(
+      outPath,
+      "wind_cable_overlap_stacked_bars_by_subdivision.png"
+    ),
     plot = p,
-    width = 10,
-    height = 6
+    width = 11,
+    height = 6,
+    dpi = 300
   )
 
-  return(p)
+  invisible(p)
 }
 
 ----- run/plot_maps.R -----
@@ -2743,20 +3476,45 @@ if (!is.null(cable)) {
 
 # Add land
 p <- p + plot_base_layers(baltic)
-# Add SD30 / SD31 border
-if(!is.null(ices_area)) {
 
-  p <- p +
-    geom_sf(
-      data = ices_area %>%
-        dplyr::filter(SubDivisio %in% c(30,31)),
-      fill = NA,
-      colour = "black",
-      linewidth = 0.6,
-      linetype = "solid"
+# Add subdivision guide lines
+
+lat_lines <- sf::st_as_sf(
+  data.frame(
+    id = c("63.5", "60.5"),
+    geometry = sf::st_sfc(
+
+      sf::st_linestring(matrix(
+        c(
+          17, 63.5,
+          23, 63.5
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )),
+
+      sf::st_linestring(matrix(
+        c(
+          17, 60.5,
+          22, 60.5
+        ),
+        ncol = 2,
+        byrow = TRUE
+      )),
+
+      crs = 4326
     )
+  )
+)
 
-}
+p <- p +
+  geom_sf(
+    data = lat_lines,
+    colour = "black",
+    linetype = "dashed",
+    linewidth = 0.6
+  )
+  
 #final settings
   p <- p +
     coord_sf(
@@ -3088,7 +3846,7 @@ csq_sf <- csq_sf %>%
   # =========================
 
   rect_tila_lut <- read.csv(
-    file.path(dataPath, "ices_data/ICESrectangles_to_tilastoruutu.csv"),
+    file.path(dataPath, "ices_data/ICESrectangles_to_tilastoruutu_to_subdivisions.csv"),
     stringsAsFactors = FALSE
   ) %>%
     rename(
