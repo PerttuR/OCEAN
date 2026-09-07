@@ -452,6 +452,7 @@ message(
 #   VesselLength_list
 #   FishingHour
 #   WindHours
+#   CableHours
 #   No_Records_T1
 #   ICESarea
 #   hours_logbook
@@ -772,22 +773,22 @@ table2_core <- table2_raw %>%
 
 
 # ============================================================
-# 8. CREATE C-SQUARE LOOKUP FOR ICES RECTANGLES, ICES AREAS
-#    AND WIND-AREA OVERLAP
+# 8. CREATE C-SQUARE LOOKUP FOR ICES RECTANGLES, ICES AREAS,
+#    WIND-AREA OVERLAP AND CABLE OVERLAP
 #
 # D$table1 already contains:
 #   Csquare
 #   ICESrectangle
 #   ICESarea
 #
-# Wind overlap is calculated directly from each C-square
-# geometry and S$wind.
+# Wind and cable overlap are calculated directly from each
+# C-square geometry and S$wind / S$cable_full.
 # ============================================================
 
 required_table1_columns <- c(
   "Year",
   "Csquare",
-  "MetierL4",
+  "LE_GEAR",
   "VE_ID",
   "FishingHour",
   "ICESrectangle",
@@ -841,19 +842,32 @@ wind_projected <- S$wind %>%
   sf::st_make_valid() %>%
   sf::st_transform(3067)
 
+# Transform cable areas once
+cable_projected <- S$cable_full %>%
+  sf::st_make_valid() %>%
+  sf::st_transform(3067)
 
-# Determine whether each C-square intersects any wind area
+
+# Determine whether each C-square intersects any wind or cable area
 wind_intersections <- sf::st_intersects(
   csquare_sf,
   wind_projected
 )
 
-csquare_wind_lookup <- tibble::tibble(
+cable_intersections <- sf::st_intersects(
+  csquare_sf,
+  cable_projected
+)
+
+csquare_spatial_lookup <- tibble::tibble(
   Csquare = as.character(
     csquare_sf$Csquare
   ),
   in_wind_area = lengths(
     wind_intersections
+  ) > 0,
+  in_cable_area = lengths(
+    cable_intersections
   ) > 0
 )
 
@@ -861,9 +875,7 @@ csquare_wind_lookup <- tibble::tibble(
 # ============================================================
 # 9. BUILD TABLE 1 EFFORT DATA
 #
-# D$table1 is already grouped by C-square, vessel and métier.
-# MetierL4 is used as Gear because the prepared D$table1 no
-# longer contains the original LE_GEAR column.
+# D$table1 is already grouped by C-square, vessel and gear.
 # ============================================================
 
 table1_core <- D$table1 %>%
@@ -872,15 +884,19 @@ table1_core <- D$table1 %>%
     ICES_Rect = as.character(ICESrectangle),
     ICESarea = as.character(ICESarea),
     VE_ID = as.character(VE_ID),
-    Gear = as.character(MetierL4)
+    Gear = as.character(LE_GEAR)
   ) %>%
   dplyr::left_join(
-    csquare_wind_lookup,
+    csquare_spatial_lookup,
     by = "Csquare"
   ) %>%
   dplyr::mutate(
     in_wind_area = dplyr::coalesce(
       in_wind_area,
+      FALSE
+    ),
+    in_cable_area = dplyr::coalesce(
+      in_cable_area,
       FALSE
     )
   ) %>%
@@ -891,11 +907,15 @@ table1_core <- D$table1 %>%
     Gear
   ) %>%
   dplyr::summarise(
-    FishingHour = safe_sum(FishingHour),
-
     WindHours = safe_sum(
       FishingHour[in_wind_area]
     ),
+
+    CableHours = safe_sum(
+      FishingHour[in_cable_area]
+    ),
+
+    FishingHour = safe_sum(FishingHour),
 
     No_Records_T1 = dplyr::n(),
 
@@ -935,6 +955,10 @@ table2_statistics <- table2_core %>%
     ),
     WindHours = dplyr::coalesce(
       WindHours,
+      0
+    ),
+    CableHours = dplyr::coalesce(
+      CableHours,
       0
     ),
     No_Records_T1 = dplyr::coalesce(
@@ -1119,6 +1143,7 @@ table2_statistics <- table2_statistics %>%
     VesselLength_list,
     FishingHour,
     WindHours,
+    CableHours,
     No_Records_T1, #THIS CODE DOES NOT CALCULATE IT THE SAME WAY AS PREVIOUS, NOTE
     ICESarea,
     hours_logbook
@@ -1153,6 +1178,7 @@ expected_columns <- c(
   "VesselLength_list",
   "FishingHour",
   "WindHours",
+  "CableHours",
   "No_Records_T1",
   "ICESarea",
   "hours_logbook"
@@ -1178,6 +1204,23 @@ if (nrow(invalid_wind_hours) > 0) {
   stop(
     "WindHours exceeds FishingHour in ",
     nrow(invalid_wind_hours),
+    " rows."
+  )
+}
+
+
+# Check that cable hours do not exceed total VMS hours
+invalid_cable_hours <- table2_statistics %>%
+  dplyr::filter(
+    !is.na(FishingHour),
+    !is.na(CableHours),
+    CableHours > FishingHour + 1e-10
+  )
+
+if (nrow(invalid_cable_hours) > 0) {
+  stop(
+    "CableHours exceeds FishingHour in ",
+    nrow(invalid_cable_hours),
     " rows."
   )
 }
@@ -1334,6 +1377,20 @@ cat(
   format(
     sum(
       table2_statistics$WindHours,
+      na.rm = TRUE
+    ),
+    scientific = FALSE,
+    big.mark = " "
+  ),
+  "\n",
+  sep = ""
+)
+
+cat(
+  "Total cable-overlap hours: ",
+  format(
+    sum(
+      table2_statistics$CableHours,
       na.rm = TRUE
     ),
     scientific = FALSE,
