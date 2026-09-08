@@ -1,4 +1,5 @@
 # After running MAIN
+#NOTE: From raw data the total KG was double previously. Corrected in this version
 
 library(tibble)
 
@@ -635,7 +636,7 @@ table2_raw <- purrr::map_dfr(
       "LE_RECT",
       "LE_GEAR",
       "VE_LEN",
-      "LE_KG_TOT",
+      "LE_KG_TOTAL",
       "LE_EURO_TOT",
       "LE_KG_HER",
       "LE_EURO_HER",
@@ -708,7 +709,7 @@ table2_raw <- purrr::map_dfr(
         Gear,
         INTV,
         VesselLengthRange,
-        LE_KG_TOT,
+        LE_KG_TOT = LE_KG_TOTAL,
         LE_EURO_TOT,
         LE_KG_HER,
         LE_EURO_HER,

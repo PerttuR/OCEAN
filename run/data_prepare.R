@@ -114,6 +114,10 @@ prepare_data <- function(
       !cols_euro %in% c("LE_EURO_TOTAL", "LE_EURO_TOT", "LE_EURO_ELE")
     ]
 
+    if ("LE_KG_TOTAL" %in% names(eflalo)) {
+      eflalo$LE_KG_TOT <- eflalo$LE_KG_TOTAL
+    }
+
     cols_table2 <- c(
       "VE_REF",
       "VE_COU",
@@ -167,6 +171,10 @@ prepare_data <- function(
     cols_euro_tacsat <- cols_euro_tacsat[
       !cols_euro_tacsat %in% c("LE_EURO_TOTAL", "LE_EURO_TOT", "LE_EURO_ELE")
     ]
+
+    if ("LE_KG_TOTAL" %in% names(tacsatEflalo)) {
+      tacsatEflalo$LE_KG_TOT <- tacsatEflalo$LE_KG_TOTAL
+    }
 
     cols_table1 <- c(
       "VE_REF",
