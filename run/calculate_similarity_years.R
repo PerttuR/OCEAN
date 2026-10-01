@@ -1,4 +1,5 @@
-years <- names(S$sf_list)
+# years <- names(S$sf_list)
+years <- as.character(2017:2025)
 
 fishing_long <- purrr::map_dfr(years, function(y) {
   csq <- S$sf_list[[y]]
@@ -61,8 +62,6 @@ cosine_vs_ref
 
 #### OR AS ICES SQUARES
 
-years <- names(S$sf_list)
-
 rect_perc <- purrr::map_dfr(years, function(y) {
 
   csq <- S$sf_list[[y]]
@@ -92,12 +91,21 @@ Rect_cor = cor(
 
 print(round(Rect_cor, 2))
 
+## Average correlation
+
+cor_vals <- Rect_cor[upper.tri(Rect_cor)]
+
+c(
+  mean = mean(cor_vals),
+  min  = min(cor_vals),
+  max  = max(cor_vals)
+)
+
 ### OR define neighbours with distance D. USING COSINE SIMILARITY
 
 library(sf)
 library(spdep)
 
-years <- names(S$sf_list)
 ref_year <- "2019"
 
 csq_geom <- S$sf_list[[years[1]]] %>%
@@ -159,14 +167,35 @@ sim_by_radius <- purrr::map_dfr(radii_m, function(r) {
 
 ### visualise
 
-ggplot(
+
+  p <- ggplot(
   sim_by_radius,
-  aes(x = radius_km, y = cosine_similarity, colour = Year)
+  aes(
+    x = radius_km,
+    y = cosine_similarity,
+    colour = Year
+  )
 ) +
-  geom_line() +
-  theme_minimal() +
+  geom_line(linewidth = 1.1) +
+  geom_point(size = 2.5) +
+  theme_bw(base_size = 14) +
   labs(
     x = "Neighborhood radius (km)",
     y = "Cosine similarity vs 2019",
-    title = "Scale dependence of spatial fishing pattern stability"
+    title = ""
+  ) +
+  theme(
+    legend.position = "bottom"
   )
+
+p
+
+
+ggsave(
+  filename = "Scale_dependence_spatial_stability.png",
+  plot = p,
+  width = 180,
+  height = 120,
+  units = "mm",
+  dpi = 600
+)
