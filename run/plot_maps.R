@@ -161,9 +161,9 @@ p <- p +
     add_map_decorations() +
     labs(
       title = if (is.null(cable)) {
-        "Fishing intensity and wind areas"
+        ""#"Fishing intensity and wind areas"
       } else {
-        "Fishing intensity, wind areas and cable routes"
+        ""#"Fishing intensity, wind areas and cable routes"
       }
     )
 

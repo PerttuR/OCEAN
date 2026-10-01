@@ -467,10 +467,10 @@ plot_wind_cable_overlap_bars <- function(
       x = "Wind area rank within subdivision",
       y = "% of average fishing hours",
       fill = "Overlap",
-      title = "Fishing overlap by wind area and cable corridor",
-      subtitle = paste0(
-        "Wind areas ranked separately within each ICES subdivision"
-      )
+      # title = "Fishing overlap by wind area and cable corridor",
+      # subtitle = paste0(
+      #   "Wind areas ranked separately within each ICES subdivision"
+      # )
     ) +
     theme(
       axis.text.x = element_text(

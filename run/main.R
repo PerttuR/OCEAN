@@ -383,13 +383,15 @@ csq_year <- S$sf_list[["2023"]]
 plot_wind_id_map(S$wind, S$coast)
 
 #with cables
-plot_fishing_with_wind(
+PubMap = plot_fishing_with_wind(
   csq_year,
   S$wind,
   S$cable_full,
   S$coast,
   S$ices_area
 )
+
+PubMap
 
 #withOUT cables
 plot_fishing_with_wind(
@@ -1201,9 +1203,9 @@ write.csv(
 
 ### stack plot ## HUOM HUONM!! Cable ja area voi tässä overlapata
 
-plot_wind_cable_overlap_bars(wind_overlap_mean)
+pubOverlap = plot_wind_cable_overlap_bars(wind_overlap_mean)
 
-
+pubOverlap
 
 
 ## check correlations of revenue and gfishing hours
@@ -1297,4 +1299,26 @@ write.csv(
   scenario_values_subdiv,
   file.path(outPath, "scenario_values_by_subdivision.csv"),
   row.names = FALSE
+)
+
+
+
+
+ggsave(
+  filename = "Fishing_intensity_wind_areas_and_cable_routes.png",
+  plot = PubMap,
+  width = 180,
+  height = 120,
+  units = "mm",
+  dpi = 600
+)
+
+
+ggsave(
+  filename = "Fishing_overlap_by_wind_area_and_cable_corridor.png",
+  plot = pubOverlap,
+  width = 180,
+  height = 120,
+  units = "mm",
+  dpi = 600
 )
