@@ -1,0 +1,63 @@
+## Find areas 30 and 31 based on ICES rects
+
+subdiv_lookup <- read.csv(
+  file.path(
+    dataPath,
+    "ices_data",
+    "ICESrectangles_to_tilastoruutu_to_subdivisions.csv"
+  ),
+  stringsAsFactors = FALSE
+)
+
+table2_area <- D$table2 %>%
+  left_join(
+    subdiv_lookup %>%
+      select(
+        ices_Data,
+        ices_subdiv
+      ),
+    by = c(
+      "ICESrectangle" = "ices_Data"
+    )
+  )
+
+  #claculate for the areas
+
+  table2_area %>%
+  filter(
+    Year == 2024,
+    ices_subdiv %in% c(30, 31),
+    MetierL4 %in% c("OTB", "OTM", "OTT", "PTM")
+  ) %>%
+  group_by(ices_subdiv) %>%
+  summarise(
+    total_catch = sum(TotWeight, na.rm = TRUE),
+    vms_catch = sum(
+      TotWeight[VMSEnabled == "Y"],
+      na.rm = TRUE
+    ),
+    perc_vms = 100 * vms_catch / total_catch,
+    .groups = "drop"
+  )
+
+  #For both
+
+  table2_area %>%
+  filter(
+    Year == 2024,
+    ices_subdiv %in% c(30, 31),
+    MetierL4 %in% c("OTB", "OTM", "OTT", "PTM")
+  ) %>%
+  summarise(
+    total_catch = sum(TotWeight, na.rm = TRUE),
+    vms_catch = sum(
+      TotWeight[VMSEnabled == "Y"],
+      na.rm = TRUE
+    ),
+    perc_vms = 100 * vms_catch / total_catch
+  )
+
+
+
+
+
