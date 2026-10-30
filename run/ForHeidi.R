@@ -1474,6 +1474,170 @@ table2_statistics <- table2_statistics %>%
     ICESarea = ices_subdiv
   )
 
+### calculate proportion un catches in 30/31
+
+catch_by_length <- table2_statistics %>%
+  filter(ICESarea %in% c(30, 31)) %>%
+  mutate(
+    Length_group = case_when(
+      VesselLength_list %in% c(
+        "VL0006", "VL0608", "VL0810", "VL1012", "VL1215",
+        "VL0810,VL1012"
+      ) ~ "< 15 m",
+      
+      VesselLength_list %in% c(
+        "VL1518", "VL1824", "VL2440", "VL40XX"
+      ) ~ ">= 15 m",
+      
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(Length_group)) %>%
+  group_by(Length_group) %>%
+  summarise(
+    Catch_kg = sum(SUM_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Percentage = 100 * Catch_kg / sum(Catch_kg)
+  )
+
+catch_by_length
+
+# Classify vessels into under 15 m and 15 m or longer
+catch_data <- table2_statistics %>%
+  filter(ICESarea %in% c(30, 31)) %>%
+  mutate(
+    Length_group = case_when(
+      VesselLength_list %in% c(
+        "VL0006", "VL0608", "VL0810", "VL1012",
+        "VL1215", "VL0810,VL1012"
+      ) ~ "< 15 m",
+      
+      VesselLength_list %in% c(
+        "VL1518", "VL1824", "VL2440", "VL40XX"
+      ) ~ ">= 15 m",
+      
+      TRUE ~ NA_character_
+    )
+  )
+
+# Calculate annual catches and percentage shares by vessel length group
+catch_by_year <- catch_data %>%
+  filter(!is.na(Length_group)) %>%
+  group_by(Year, Length_group) %>%
+  summarise(
+    Catch_kg = sum(SUM_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(Year) %>%
+  mutate(
+    Percentage = 100 * Catch_kg / sum(Catch_kg)
+  ) %>%
+  ungroup()
+
+catch_by_year
+
+
+# Calculate catches and percentage shares for the entire period
+catch_total <- catch_data %>%
+  filter(!is.na(Length_group)) %>%
+  group_by(Length_group) %>%
+  summarise(
+    Catch_kg = sum(SUM_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    Percentage = 100 * Catch_kg / sum(Catch_kg)
+  )
+
+catch_total
+
+
+# Extract the annual catch share of vessels under 15 m
+under15_by_year <- catch_by_year %>%
+  filter(Length_group == "< 15 m") %>%
+  select(Year, Catch_kg, Percentage)
+
+under15_by_year
+
+# graafi vuosittaisista yli ja alle 15 metristen saalistuhteista 30/31
+
+ggplot(
+  catch_by_year,
+  aes(
+    x = Year,
+    y = Percentage,
+    color = Length_group,
+    group = Length_group
+  )
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 10),
+    labels = function(x) paste0(x, "%")
+  ) +
+  labs(
+    title = "Share of total catch by vessel length",
+    subtitle = "ICES areas 30 and 31",
+    x = "Year",
+    y = "Share of total catch",
+    color = "Vessel length"
+  ) +
+  theme_minimal()
+
+
+
+# Calculate annual catches of vessels under 15 m by ICES area
+catch_under15_area <- table2_statistics %>%
+  filter(
+    ICESarea %in% c(30, 31),
+    VesselLength_list %in% c(
+      "VL0006", "VL0608", "VL0810", "VL1012",
+      "VL1215", "VL0810,VL1012"
+    )
+  ) %>%
+  group_by(Year, ICESarea) %>%
+  summarise(
+    Catch_kg = sum(SUM_KG_TOT, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  group_by(Year) %>%
+  mutate(
+    Percentage = 100 * Catch_kg / sum(Catch_kg)
+  ) %>%
+  ungroup()
+
+catch_under15_area
+
+#LINE graph of under 15 between 30 / 31
+ggplot(
+  catch_under15_area,
+  aes(
+    x = Year,
+    y = Percentage,
+    color = factor(ICESarea),
+    group = ICESarea
+  )
+) +
+  geom_line(linewidth = 1) +
+  geom_point(size = 2) +
+  scale_y_continuous(
+    limits = c(0, 100),
+    breaks = seq(0, 100, 10),
+    labels = function(x) paste0(x, "%")
+  ) +
+  labs(
+    title = "Distribution of catch by vessels under 15 m",
+    subtitle = "ICES areas 30 and 31",
+    x = "Year",
+    y = "Share of catch",
+    color = "ICES area"
+  ) +
+  theme_minimal()
+
 # ============================================================
 # 16. EXPORT
 # ============================================================
