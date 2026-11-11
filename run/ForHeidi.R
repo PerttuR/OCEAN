@@ -1663,3 +1663,11 @@ message(
   output_file
 )
 
+output_file <- here::here("out", "table2_statistics.rds")
+
+saveRDS(
+  table2_statistics,
+  file = output_file
+)
+
+message("Saved: ", output_file)
